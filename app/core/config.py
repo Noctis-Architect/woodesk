@@ -40,7 +40,7 @@ class Site:
 
 @dataclass
 class AISettings:
-    mode: str = "custom"  # "custom" (own key) | "server" (free tier from the project server)
+    mode: str = "server"  # "server" (free tier from the project server) | "custom" (own key)
     api_format: str = "openai"  # "openai" | "anthropic"
     base_url: str = "https://api.openai.com/v1"
     model: str = ""

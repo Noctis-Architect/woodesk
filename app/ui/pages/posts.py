@@ -139,18 +139,33 @@ class PostEditor(QDialog):
     def _lang(self):
         return cfg.ai.output_language
 
+    def _ai_context(self) -> str:
+        """A short brief with everything the AI needs: title, status, categories, tags, existing text."""
+        cats = ", ".join(self.cats.selected_names()) or "-"
+        parts = [
+            f"Title: {self.title.text().strip() or '-'}",
+            f"Status: {self.status.currentText()}",
+            f"Categories: {cats}",
+            f"Tags: {self.tags.text().strip() or '-'}",
+            f"Excerpt: {self.excerpt.toPlainText().strip() or '-'}",
+        ]
+        existing = self.content.text().strip()
+        if existing:
+            parts.append(f"Current article text (may be improved/extended): {existing}")
+        return "\n".join(parts)
+
     def ai_draft(self):
         if not self.title.text().strip():
             notify(t("Enter a title first."), "warn")
             return
-        run_ai(self, self.ctx, prompts.post_draft(self.title.text(), self._lang(), self.tags.text(), self.content.text()),
+        run_ai(self, self.ctx, prompts.post_draft(self.title.text(), self._lang(), self.tags.text(), self.content.text(), context=self._ai_context()),
                self.content.set_text, t("Article draft"), max_tokens=4000, busy=self.ai_content_btn)
 
     def ai_outline(self):
         if not self.title.text().strip():
             notify(t("Enter a title first."), "warn")
             return
-        run_ai(self, self.ctx, prompts.post_outline(self.title.text(), self._lang(), self.tags.text()), self.content.set_text,
+        run_ai(self, self.ctx, prompts.post_outline(self.title.text(), self._lang(), self.tags.text(), context=self._ai_context()), self.content.set_text,
                t("Outline"), max_tokens=1200, busy=self.ai_content_btn)
 
     def ai_improve(self):
@@ -171,11 +186,11 @@ class PostEditor(QDialog):
         if not self.content.text():
             notify(t("Write or generate the article first."), "warn")
             return
-        run_ai(self, self.ctx, prompts.excerpt(self.content.text(), self._lang()), self.excerpt.setPlainText, t("Excerpt"),
+        run_ai(self, self.ctx, prompts.excerpt(self.content.text(), self._lang(), context=self._ai_context()), self.excerpt.setPlainText, t("Excerpt"),
                max_tokens=200, busy=self.ai_excerpt_btn)
 
     def ai_tags(self):
-        run_ai(self, self.ctx, prompts.suggest_tags(self.title.text() + "\n" + self.content.text(), self._lang()), self.tags.setText,
+        run_ai(self, self.ctx, prompts.suggest_tags(self.title.text() + "\n" + self.content.text(), self._lang(), context=self._ai_context()), self.tags.setText,
                t("Tags"), max_tokens=200, busy=self.ai_tags_btn)
 
     def ai_seo(self):
@@ -187,7 +202,7 @@ class PostEditor(QDialog):
             if d.get("title") and not self.title.text():
                 self.title.setText(d["title"])
 
-        run_ai(self, self.ctx, prompts.seo_meta(self.title.text(), self._lang(), self.content.text()), apply, "SEO",
+        run_ai(self, self.ctx, prompts.seo_meta(self.title.text(), self._lang(), self.content.text(), context=self._ai_context()), apply, "SEO",
                json_mode=True, max_tokens=400, busy=self.ai_excerpt_btn)
 
     def md_to_html(self):

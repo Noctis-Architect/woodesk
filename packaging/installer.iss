@@ -1,7 +1,7 @@
 ; Inno Setup script - compile after build_windows.ps1
 [Setup]
 AppName=WooDesk
-AppVersion=1.0.2
+AppVersion=1.0.3
 DefaultDirName={autopf}\WooDesk
 DefaultGroupName=WooDesk
 OutputBaseFilename=WooDesk-Setup

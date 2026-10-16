@@ -431,12 +431,32 @@ class ProductEditor(QDialog):
     def _lang(self) -> str:
         return cfg.ai.output_language
 
+    def _ai_context(self) -> str:
+        """A short brief with everything the AI needs: title, type, status, price, categories, existing text."""
+        cats = ", ".join(self.cat_picker.selected_names()) or "-"
+        price = self.regular.text().strip() or "-"
+        sale = self.sale.text().strip()
+        price_str = f"{price} (sale: {sale})" if sale else price
+        parts = [
+            f"Title: {self.name.text().strip() or '-'}",
+            f"Type: {self.type.currentText()}",
+            f"Status: {self.status.currentText()}",
+            f"Price: {price_str}",
+            f"SKU: {self.sku.text().strip() or '-'}",
+            f"Categories: {cats}",
+            f"Short description: {self.short.text().strip() or '-'}",
+        ]
+        existing = self.desc.text().strip()
+        if existing:
+            parts.append(f"Current full description (may be improved/reused): {existing}")
+        return "\n".join(parts)
+
     def ai_description(self):
         if not self.name.text().strip():
             notify(t("Enter the product name first."), "warn")
             return
         details = ", ".join(f"{a['name']}: {', '.join(a['options'])}" for a in self.attributes())
-        msgs = prompts.product_description(self.name.text(), self._lang(), details, self.desc.text())
+        msgs = prompts.product_description(self.name.text(), self._lang(), details, self.desc.text(), context=self._ai_context())
         run_ai(self, self.ctx, msgs, self.desc.set_text, t("Product description"), max_tokens=1500, busy=self.ai_desc_btn)
 
     def ai_improve(self):
@@ -459,15 +479,15 @@ class ProductEditor(QDialog):
         if not self.name.text().strip():
             notify(t("Enter the product name first."), "warn")
             return
-        msgs = prompts.product_short(self.name.text(), self._lang(), self.desc.text())
+        msgs = prompts.product_short(self.name.text(), self._lang(), self.desc.text(), context=self._ai_context())
         run_ai(self, self.ctx, msgs, self.short.set_text, t("Short description"), max_tokens=300, busy=self.ai_short_btn)
 
     def ai_tags(self):
-        msgs = prompts.suggest_tags(f"{self.name.text()}\n{self.desc.text()}", self._lang())
+        msgs = prompts.suggest_tags(f"{self.name.text()}\n{self.desc.text()}", self._lang(), context=self._ai_context())
         run_ai(self, self.ctx, msgs, self.tags.setText, t("Tags"), max_tokens=200, busy=self.ai_tags_btn)
 
     def ai_seo(self):
-        msgs = prompts.seo_meta(self.name.text(), self._lang(), self.desc.text(), self.seo_kw.text())
+        msgs = prompts.seo_meta(self.name.text(), self._lang(), self.desc.text(), self.seo_kw.text(), context=self._ai_context())
 
         def apply(d: dict):
             self.seo_title.setText(d.get("title", ""))

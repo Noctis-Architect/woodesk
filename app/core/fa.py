@@ -172,4 +172,13 @@ FA.update({
         "ووکی‌دسک یک برنامه‌ی دسکتاپ رایگان و متن‌باز برای مدیریت فروشگاه ووکامرس و وبلاگ وردپرس شماست. می‌توانید محصولات، موجودی، قیمت‌ها، دسته‌ها، برچسب‌ها، مقالات و رسانه‌ها را از طریق REST API رسمی سایت‌تان مرور، ایجاد و ویرایش کنید. دستیار هوش مصنوعی داخلی هم توضیحات محصول، پیش‌نویس مقاله، چکیده، برچسب و متن سئو را به زبان انتخابی شما می‌نویسد.\n\nووکی‌دسک مستقیماً با اطلاعات ورودی که خودتان می‌سازید به سایت خودتان وصل می‌شود. هیچ داده‌ای از طرف واسطه‌ها رد نمی‌شود و رمزها و کلیدهای API به‌صورت امن در Keyring سیستم‌عامل ذخیره می‌شوند. آمار ناشناس اختیاری را هم می‌توانید در تب حریم خصوصی خاموش کنید.",
     "Products and orders use a WooCommerce key (Settings > Advanced > REST API). Posts and media use a WordPress application password (Users > Profile > Application Passwords). Both are created by you and can be revoked at any time; only the access you grant is used.":
         "محصولات و سفارش‌ها از کلید ووکامرس (تنظیمات › پیشرفته › REST API) استفاده می‌کنند. مقالات و رسانه‌ها از رمز برنامه‌ی وردپرس (کاربران › پروفایل › Application Passwords). هر دو را خودتان می‌سازید و هر زمان می‌توانید باطل کنید؛ فقط همان دسترسی که می‌دهید استفاده می‌شود.",
+    # --- AI settings redesign ---
+    "How should the AI run?": "هوش مصنوعی چطور اجرا شود؟",
+    "My own API key": "کلید API خودم",
+    "Free server AI": "هوش مصنوعی رایگان سرور",
+    "Server model": "مدل سرور",
+    "Quota status": "وضعیت سهمیه",
+    "Refresh models & quota": "دریافت مدل و سهمیه",
+    "Choose how WooDesk writes text with AI. The free server option only needs a Gmail and has a daily limit; your own API key has no limit.":
+        "انتخاب کنید ووکی‌دسک متن‌ها را چطور با هوش مصنوعی بنویسد. گزینه‌ی رایگان سرور فقط جیمیل می‌خواهد و سهمیه‌ی روزانه دارد؛ کلید API خودتان محدودیت ندارد.",
 })

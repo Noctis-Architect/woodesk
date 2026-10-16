@@ -65,12 +65,6 @@ results["media_items"] = win.pages["media"].grid.count()
 win.grab().save(f"{out}/media.png")
 win.goto("settings"); pump(0.5)
 win.grab().save(f"{out}/settings.png")
-win.goto("ai"); pump(0.3)
-win.pages["ai"].inp.setPlainText("Wooden coffee table")
-win.pages["ai"].task.setCurrentIndex(1)
-win.pages["ai"].run(); pump(1.5)
-results["ai_out"] = win.pages["ai"].out.toPlainText()[:60]
-win.grab().save(f"{out}/ai.png")
 
 # product editor
 from app.ui.pages.product_editor import ProductEditor  # noqa: E402

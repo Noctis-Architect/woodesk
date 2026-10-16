@@ -27,26 +27,28 @@ def _lang(code: str) -> str:
     return LANG_NAMES.get(code, code)
 
 
-def product_description(name: str, lang: str, details: str = "", existing: str = "", keywords: str = "", tone: str = "persuasive but honest") -> list[dict]:
+def product_description(name: str, lang: str, details: str = "", existing: str = "", keywords: str = "", tone: str = "persuasive but honest", context: str = "") -> list[dict]:
     return _msg(
         f"Write a complete product description in {_lang(lang)} for the product below.\n"
-        f"Product name: {name}\nKnown details: {details or '-'}\nFocus keywords: {keywords or '-'}\n"
+        f"Product name: {name}\nProduct metadata (from the shop): {context or '-'}\n"
+        f"Known details: {details or '-'}\nFocus keywords: {keywords or '-'}\n"
         f"Existing description (improve/reuse facts if present): {existing or '-'}\nTone: {tone}.\n"
         f"Structure: short intro paragraph, a bullet list of key features, a closing paragraph. {HTML_RULE}"
     )
 
 
-def product_short(name: str, lang: str, description: str = "") -> list[dict]:
+def product_short(name: str, lang: str, description: str = "", context: str = "") -> list[dict]:
     return _msg(
         f"Write a short product summary (max 2 sentences, ~40 words) in {_lang(lang)} for '{name}'.\n"
+        f"Product metadata (from the shop): {context or '-'}\n"
         f"Base it on this description if available: {description or '-'}\nOutput plain HTML with a single <p>."
     )
 
 
-def seo_meta(title: str, lang: str, content: str = "", keyword: str = "") -> list[dict]:
+def seo_meta(title: str, lang: str, content: str = "", keyword: str = "", context: str = "") -> list[dict]:
     return _msg(
         f"Create SEO metadata in {_lang(lang)} for the page below.\nTitle: {title}\nFocus keyword: {keyword or '-'}\n"
-        f"Content: {content[:3000] or '-'}\n"
+        f"Page metadata: {context or '-'}\nContent: {content[:3000] or '-'}\n"
         'Return ONLY a JSON object: {"title": "<=60 chars", "description": "<=155 chars", '
         '"slug": "latin-lowercase-hyphenated", "focus_keyword": "..."}'
     )
@@ -63,27 +65,31 @@ def translate(text: str, target_lang: str) -> list[dict]:
     return _msg(f"Translate the text below into {_lang(target_lang)}. Keep HTML tags unchanged.\n\nTEXT:\n{text}")
 
 
-def post_outline(topic: str, lang: str, keywords: str = "") -> list[dict]:
+def post_outline(topic: str, lang: str, keywords: str = "", context: str = "") -> list[dict]:
     return _msg(
-        f"Create a detailed blog article outline in {_lang(lang)} about: {topic}\nKeywords: {keywords or '-'}\n"
+        f"Create a detailed blog article outline in {_lang(lang)} about: {topic}\n"
+        f"Article metadata (from the site): {context or '-'}\nKeywords: {keywords or '-'}\n"
         "Return a list of H2 headings, each with 2-3 bullet points. " + HTML_RULE
     )
 
 
-def post_draft(topic: str, lang: str, keywords: str = "", outline: str = "", words: int = 900) -> list[dict]:
+def post_draft(topic: str, lang: str, keywords: str = "", outline: str = "", words: int = 900, context: str = "") -> list[dict]:
     return _msg(
         f"Write a complete, original blog article in {_lang(lang)} (about {words} words) on: {topic}\n"
+        f"Article metadata (from the site): {context or '-'}\n"
         f"Keywords to include naturally: {keywords or '-'}\nOutline to follow (optional): {outline or '-'}\n"
         f"Use an engaging introduction, H2/H3 sections and a conclusion. {HTML_RULE}"
     )
 
 
-def excerpt(content: str, lang: str) -> list[dict]:
-    return _msg(f"Write a 2-sentence excerpt in {_lang(lang)} (plain text, <=40 words) for this article:\n{content[:4000]}")
+def excerpt(content: str, lang: str, context: str = "") -> list[dict]:
+    return _msg(f"Write a 2-sentence excerpt in {_lang(lang)} (plain text, <=40 words) for this article:\n"
+                f"Article metadata: {context or '-'}\n{content[:4000]}")
 
 
-def suggest_tags(content: str, lang: str) -> list[dict]:
-    return _msg(f"Suggest 5-8 short tags in {_lang(lang)} for the content below. Return them comma-separated on one line.\n{content[:3000]}")
+def suggest_tags(content: str, lang: str, context: str = "") -> list[dict]:
+    return _msg(f"Suggest 5-8 short tags in {_lang(lang)} for the content below. "
+                f"Return them comma-separated on one line.\nContext: {context or '-'}\n{content[:3000]}")
 
 
 def alt_text(name: str, lang: str) -> list[dict]:

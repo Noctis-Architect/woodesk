@@ -13,7 +13,6 @@ from .. import APP_NAME, __version__
 from ..core.config import cfg
 from ..core.i18n import t
 from ..resources import branding_path
-from .pages.ai_studio import AIStudioPage
 from .pages.dashboard import DashboardPage
 from .pages.feedback import FeedbackPage
 from .pages.media import MediaPage
@@ -76,11 +75,10 @@ class MainWindow(QMainWindow):
         self.pages["products"] = ProductsPage(ctx)
         self.pages["posts"] = PostsPage(ctx)
         self.pages["media"] = MediaPage(ctx)
-        self.pages["ai"] = AIStudioPage(ctx)
         self.pages["feedback"] = FeedbackPage(ctx)
         self.pages["settings"] = SettingsPage(ctx, self.apply_theme)
         for key, icon_, text in [("dashboard", "🏠", "Dashboard"), ("products", "📦", "Products"), ("posts", "📝", "Posts"),
-                                 ("media", "🖼", "Media"), ("ai", "✨", "AI"), ("feedback", "💬", "Feedback"), ("settings", "⚙", "Settings")]:
+                                 ("media", "🖼", "Media"), ("feedback", "💬", "Feedback"), ("settings", "⚙", "Settings")]:
             if key == "feedback":
                 sl.addStretch()
             b = QPushButton(f"{icon_}  {t(text)}")

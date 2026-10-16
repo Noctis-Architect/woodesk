@@ -66,6 +66,10 @@ class TaxonomyPicker(QWidget):
         return [self.list.item(i).data(Qt.UserRole) for i in range(self.list.count())
                 if self.list.item(i).checkState() == Qt.Checked]
 
+    def selected_names(self) -> list[str]:
+        ids = set(self.selected_ids())
+        return [c["name"] for c in self._cats if c.get("id") in ids]
+
     def _apply_filter(self, text: str) -> None:
         text = text.lower()
         for i in range(self.list.count()):

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFormLayout, QGroupBox, QHBoxLayout,
-                               QLabel, QLineEdit, QListWidget, QListWidgetItem, QRadioButton, QTabWidget,
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFormLayout, QFrame, QGroupBox, QHBoxLayout,
+                               QLabel, QLineEdit, QListWidget, QListWidgetItem, QRadioButton, QScrollArea, QTabWidget,
                                QVBoxLayout, QWidget)
 from PySide6.QtCore import Qt
 
@@ -35,6 +35,14 @@ CREDENTIALS_TEXT = (
     "Posts and media use a WordPress application password (Users > Profile > Application Passwords). "
     "Both are created by you and can be revoked at any time; only the access you grant is used."
 )
+
+
+def _scroll(w: QWidget) -> QScrollArea:
+    sa = QScrollArea()
+    sa.setWidgetResizable(True)
+    sa.setFrameShape(QFrame.NoFrame)
+    sa.setWidget(w)
+    return sa
 
 
 class SiteDialog(QDialog):
@@ -245,13 +253,47 @@ class SettingsPage(QWidget):
     def _ai_tab(self):
         w = QWidget()
         v = QVBoxLayout(w)
-        self.r_custom = QRadioButton(t("Use my own API key (any provider)"))
-        self.r_server = QRadioButton(t("Use the free AI from the project server (limited daily quota)"))
-        (self.r_server if cfg.ai.mode == "server" else self.r_custom).setChecked(True)
-        v.addWidget(self.r_custom)
+        v.setSpacing(14)
+        v.addWidget(label(
+            t("Choose how WooDesk writes text with AI. The free server option only needs a Gmail and has a daily limit; "
+              "your own API key has no limit."),
+            muted=True, wrap=True))
 
-        self.custom_box = QGroupBox()
+        mode = QGroupBox(t("How should the AI run?"))
+        ml = QVBoxLayout(mode)
+        ml.setContentsMargins(14, 18, 14, 14)
+        ml.setSpacing(8)
+        self.r_server = QRadioButton(t("Use the free AI from the project server (limited daily quota)"))
+        self.r_custom = QRadioButton(t("Use my own API key (any provider)"))
+        (self.r_server if cfg.ai.mode == "server" else self.r_custom).setChecked(True)
+        ml.addWidget(self.r_server)
+        ml.addWidget(self.r_custom)
+        v.addWidget(mode)
+
+        self.server_box = QGroupBox(t("Free server AI"))
+        sf = QFormLayout(self.server_box)
+        sf.setContentsMargins(14, 18, 14, 14)
+        sf.setSpacing(10)
+        self.gmail_input = ltr(QLineEdit(cfg.ai.gmail))
+        self.gmail_input.setPlaceholderText("yourname@gmail.com")
+        self.server_model = ltr(QComboBox())
+        self.server_model.setEditable(True)
+        if cfg.ai.server_model:
+            self.server_model.setCurrentText(cfg.ai.server_model)
+        smrow = QHBoxLayout()
+        smrow.addWidget(self.server_model, 1)
+        smrow.addWidget(button(t("Refresh models & quota"), slot=self.check_quota))
+        self.quota_lbl = QLabel("")
+        self.quota_lbl.setWordWrap(True)
+        sf.addRow(t("Your Gmail (@gmail.com)"), self.gmail_input)
+        sf.addRow(t("Server model"), smrow)
+        sf.addRow(t("Quota status"), self.quota_lbl)
+        v.addWidget(self.server_box)
+
+        self.custom_box = QGroupBox(t("My own API key"))
         f = QFormLayout(self.custom_box)
+        f.setContentsMargins(14, 18, 14, 14)
+        f.setSpacing(10)
         self.preset = QComboBox()
         for label_, fmt, url in PRESETS:
             self.preset.addItem(label_, (fmt, url))
@@ -276,29 +318,10 @@ class SettingsPage(QWidget):
         f.addRow(t("Model"), mrow)
         v.addWidget(self.custom_box)
 
-        v.addWidget(self.r_server)
-        self.server_box = QGroupBox(t("Server free AI settings"))
-        sf = QFormLayout(self.server_box)
-        self.gmail_input = ltr(QLineEdit(cfg.ai.gmail))
-        self.gmail_input.setPlaceholderText("yourname@gmail.com")
-        sf.addRow(t("Your Gmail (@gmail.com)"), self.gmail_input)
-        self.server_model = ltr(QComboBox())
-        self.server_model.setEditable(True)
-        if cfg.ai.server_model:
-            self.server_model.setCurrentText(cfg.ai.server_model)
-        smrow = QHBoxLayout()
-        smrow.addWidget(self.server_model, 1)
-        smrow.addWidget(button(t("Refresh models & quota"), slot=self.check_quota))
-        sf.addRow(t("Server model"), smrow)
-        self.quota_lbl = QLabel("")
-        self.quota_lbl.setWordWrap(True)
-        sf.addRow(t("Quota status"), self.quota_lbl)
-        v.addWidget(self.server_box)
-
-        self.r_custom.toggled.connect(self._toggle_ai_mode)
-        self._toggle_ai_mode(self.r_custom.isChecked())
-
-        f2 = QFormLayout()
+        gen = QGroupBox(t("General"))
+        gf = QFormLayout(gen)
+        gf.setContentsMargins(14, 18, 14, 14)
+        gf.setSpacing(10)
         self.temp = QDoubleSpinBox()
         self.temp.setRange(0, 2)
         self.temp.setSingleStep(0.1)
@@ -307,26 +330,34 @@ class SettingsPage(QWidget):
         for k, name in LANG_NAMES.items():
             self.out_lang.addItem(name, k)
         self.out_lang.setCurrentIndex(max(0, self.out_lang.findData(cfg.ai.output_language)))
-        f2.addRow(t("Output language"), self.out_lang)
-        f2.addRow(t("Creativity (temperature)"), self.temp)
-        v.addLayout(f2)
+        gf.addRow(t("Output language"), self.out_lang)
+        gf.addRow(t("Creativity (temperature)"), self.temp)
+        v.addWidget(gen)
+
+        self.r_custom.toggled.connect(self._toggle_ai_mode)
+        self._toggle_ai_mode(self.r_custom.isChecked())
 
         self.ai_result = QLabel("")
         self.ai_result.setWordWrap(True)
         v.addWidget(self.ai_result)
         row = QHBoxLayout()
-        row.addWidget(button(t("Test AI"), slot=self.test_ai))
         row.addStretch()
+        row.addWidget(button(t("Test AI"), slot=self.test_ai))
         row.addWidget(button(t("Save"), primary=True, slot=self.save_ai))
         v.addLayout(row)
         v.addStretch()
-        self.tabs.addTab(w, "AI")
+        self.tabs.addTab(_scroll(w), "AI")
+        self._ai_index = self.tabs.count() - 1
+        self.tabs.currentChanged.connect(self._on_tab_changed)
+
+    def _on_tab_changed(self, idx: int):
+        if (idx == getattr(self, "_ai_index", -1) and cfg.ai.mode == "server"
+                and not self.server_model.count() and cfg.server_url):
+            self.check_quota()
 
     def _toggle_ai_mode(self, custom_on: bool):
         self.custom_box.setEnabled(custom_on)
         self.server_box.setEnabled(not custom_on)
-        if not custom_on and not self.server_model.count() and cfg.server_url:
-            self.check_quota()
 
     def _preset(self):
         fmt, url = self.preset.currentData()

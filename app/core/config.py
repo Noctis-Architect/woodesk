@@ -9,7 +9,7 @@ from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
 # Set this to your own server before building releases (users can change it in Settings).
-DEFAULT_SERVER_URL = os.environ.get("WOODESK_SERVER_URL", "")
+DEFAULT_SERVER_URL = os.environ.get("WOODESK_SERVER_URL", "https://woodesk.wp-hub.org")
 
 
 def data_dir() -> Path:

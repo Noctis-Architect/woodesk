@@ -3,21 +3,47 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
-        with: { python-version: "3.12" }
-      - run: powershell -ExecutionPolicy Bypass -File packaging/build_windows.ps1
+        with:
+          python-version: "3.12"
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress
+
+      - name: Build with Nuitka and Inno Setup
+        run: powershell -ExecutionPolicy Bypass -File packaging/build_windows.ps1
         env:
           WOODESK_SERVER_URL: ${{ secrets.WOODESK_SERVER_URL }}
-      - run: Compress-Archive -Path dist/WooDesk -DestinationPath dist/WooDesk-windows.zip
-      - uses: actions/upload-artifact@v4
+
+      - name: Compress portable folder
+        run: Compress-Archive -Path dist/WooDesk -DestinationPath dist/WooDesk-windows.zip
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
         with:
-          name: WooDesk-windows
-          path: dist/WooDesk-windows.zip
-      - if: startsWith(github.ref, 'refs/tags/v')
+          name: WooDesk-windows-v1.0.0
+          path: |
+            dist/WooDesk-Setup.exe
+            dist/WooDesk-windows.zip
+
+      - name: Publish to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
-        with: { files: dist/WooDesk-windows.zip }
+        with:
+          name: "WooDesk v1.0.0"
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            dist/WooDesk-Setup.exe
+            dist/WooDesk-windows.zip

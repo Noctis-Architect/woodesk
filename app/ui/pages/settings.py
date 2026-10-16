@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import json
-import platform
-
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFormLayout, QGroupBox, QHBoxLayout,
                                QLabel, QLineEdit, QListWidget, QListWidgetItem, QRadioButton, QTabWidget,
                                QVBoxLayout, QWidget)
@@ -12,7 +9,6 @@ from ... import __version__
 from ...ai.client import PRESETS, AnthropicClient, OpenAICompatClient
 from ...ai.prompts import LANG_NAMES
 from ...api.http import domain_of, normalize_url
-from ...api.server import ServerClient
 from ...api.woo import WooClient
 from ...api.wp import WPClient
 from ...core import secrets
@@ -23,43 +19,67 @@ from ...core.workers import run_async
 from ..widgets import PageHeader, button, confirm, label, ltr, notify, restart_app, show_error
 
 
+ABOUT_TEXT = (
+    "WooDesk is a free, open-source desktop app for managing your WooCommerce store and WordPress blog. "
+    "You can browse, create and edit products, stock, prices, categories, tags, posts and media, all through "
+    "your site's official REST API. The built-in AI assistant writes product descriptions, post drafts, excerpts, "
+    "tags and SEO text in the language you choose.\n\n"
+    "WooDesk talks directly to your own site using credentials you create yourself. Nothing is routed through "
+    "third parties, and passwords and API keys are stored securely by your operating system's keyring. The "
+    "optional anonymous statistics can be turned off in the Privacy tab."
+)
+
+
+CREDENTIALS_TEXT = (
+    "Products and orders use a WooCommerce key (Settings > Advanced > REST API). "
+    "Posts and media use a WordPress application password (Users > Profile > Application Passwords). "
+    "Both are created by you and can be revoked at any time; only the access you grant is used."
+)
+
+
 class SiteDialog(QDialog):
     def __init__(self, ctx, site: Site | None = None, parent=None):
         super().__init__(parent)
         self.ctx, self.site = ctx, site
         self.setWindowTitle(t("Edit site") if site else t("Add site"))
-        self.resize(520, 0)
+        self.resize(560, 0)
         lay = QVBoxLayout(self)
         f = QFormLayout()
         self.name = QLineEdit(site.name if site else "")
         self.url = ltr(QLineEdit(site.url if site else ""))
         self.url.setPlaceholderText("https://example.com")
-        self.user = ltr(QLineEdit(site.wp_user if site else ""))
-        self.app_pw = ltr(QLineEdit(secrets.get(secret_key(site.id, "wp_password")) if site else ""))
-        self.app_pw.setEchoMode(QLineEdit.Password)
-        self.app_pw.setPlaceholderText("xxxx xxxx xxxx xxxx xxxx xxxx")
         f.addRow(t("Site name"), self.name)
         f.addRow(t("Site URL"), self.url)
-        f.addRow(t("WordPress username"), self.user)
-        f.addRow(t("Application password"), self.app_pw)
         lay.addLayout(f)
-        lay.addWidget(label(t("WordPress > Users > Profile > Application Passwords. Used for posts and media."), muted=True, wrap=True))
-        box = QGroupBox(t("WooCommerce authentication"))
-        bl = QVBoxLayout(box)
-        self.r_keys = QRadioButton(t("Consumer key / secret (WooCommerce > Settings > Advanced > REST API)"))
-        self.r_app = QRadioButton(t("Reuse the WordPress application password (HTTPS only)"))
-        (self.r_keys if (site is None or site.use_woo_keys) else self.r_app).setChecked(True)
+
+        woobox = QGroupBox(t("WooCommerce - products & orders"))
+        wv = QVBoxLayout(woobox)
+        wv.addWidget(label(t("WooCommerce > Settings > Advanced > REST API > add a key with Read/Write access. Used for products and orders."), muted=True, wrap=True))
+        wf = QFormLayout()
         self.ck = ltr(QLineEdit(secrets.get(secret_key(site.id, "ck")) if site else ""))
         self.cs = ltr(QLineEdit(secrets.get(secret_key(site.id, "cs")) if site else ""))
         self.cs.setEchoMode(QLineEdit.Password)
         self.ck.setPlaceholderText("ck_...")
         self.cs.setPlaceholderText("cs_...")
-        for w in (self.r_keys, self.ck, self.cs, self.r_app):
-            bl.addWidget(w)
-        self.r_keys.toggled.connect(lambda on: (self.ck.setEnabled(on), self.cs.setEnabled(on)))
-        self.ck.setEnabled(self.r_keys.isChecked())
-        self.cs.setEnabled(self.r_keys.isChecked())
-        lay.addWidget(box)
+        wf.addRow(t("Consumer key"), self.ck)
+        wf.addRow(t("Consumer secret"), self.cs)
+        wv.addLayout(wf)
+        lay.addWidget(woobox)
+
+        wpbox = QGroupBox(t("WordPress - posts & media (optional)"))
+        pv = QVBoxLayout(wpbox)
+        pv.addWidget(label(t("WordPress > Users > Profile > Application Passwords. Only needed for posts and media - create one with any name."), muted=True, wrap=True))
+        pf = QFormLayout()
+        self.user = ltr(QLineEdit(site.wp_user if site else ""))
+        self.app_pw = ltr(QLineEdit(secrets.get(secret_key(site.id, "wp_password")) if site else ""))
+        self.app_pw.setEchoMode(QLineEdit.Password)
+        self.app_pw.setPlaceholderText("xxxx xxxx xxxx xxxx xxxx xxxx")
+        pf.addRow(t("WordPress username"), self.user)
+        pf.addRow(t("Application password"), self.app_pw)
+        pv.addLayout(pf)
+        lay.addWidget(wpbox)
+
+        lay.addWidget(label(t("Your credentials are stored securely by your operating system (keyring) and are never sent anywhere except your own site."), muted=True, wrap=True))
         self.result = QLabel("")
         self.result.setWordWrap(True)
         lay.addWidget(self.result)
@@ -73,27 +93,33 @@ class SiteDialog(QDialog):
 
     def _clients(self):
         url = normalize_url(self.url.text())
-        wp = WPClient(url, self.user.text().strip(), self.app_pw.text())
-        if self.r_keys.isChecked():
-            woo = WooClient(url, self.ck.text(), self.cs.text())
+        wp = WPClient(url, self.user.text().strip(), self.app_pw.text().strip())
+        if self.ck.text().strip() and self.cs.text().strip():
+            woo = WooClient(url, self.ck.text().strip(), self.cs.text().strip())
         else:
-            woo = WooClient(url, wp_user=self.user.text().strip(), wp_password=self.app_pw.text())
+            woo = WooClient(url, wp_user=self.user.text().strip(), wp_password=self.app_pw.text().strip())
         return wp, woo
+
+    def _has_wp(self) -> bool:
+        return bool(self.user.text().strip() and self.app_pw.text().strip())
 
     def test(self):
         if not self.url.text().strip():
+            notify(t("Site URL is required."), "warn")
             return
         wp, woo = self._clients()
         self.test_btn.setEnabled(False)
         self.result.setText(t("Testing..."))
+        has_wp = self._has_wp()
 
         def work():
             out = []
-            try:
-                me = wp.me()
-                out.append(("ok", f"WordPress: {t('connected as')} {me.get('name') or me.get('slug')}"))
-            except Exception as e:  # noqa: BLE001
-                out.append(("error", f"WordPress: {e}"))
+            if has_wp:
+                try:
+                    me = wp.me()
+                    out.append(("ok", f"WordPress: {t('connected as')} {me.get('name') or me.get('slug')}"))
+                except Exception as e:  # noqa: BLE001
+                    out.append(("error", f"WordPress: {e}"))
             try:
                 n = woo.ping()
                 out.append(("ok", f"WooCommerce: OK ({n} {t('products')})"))
@@ -109,17 +135,26 @@ class SiteDialog(QDialog):
 
     def save(self):
         url = normalize_url(self.url.text())
-        if not url or not self.user.text().strip():
-            notify(t("URL and username are required."), "warn")
+        if not url:
+            notify(t("Site URL is required."), "warn")
+            return
+        ck, cs = self.ck.text().strip(), self.cs.text().strip()
+        user, pw = self.user.text().strip(), self.app_pw.text().strip()
+        use_keys = bool(ck and cs)
+        if not use_keys and not (user and pw):
+            notify(t("Provide either WooCommerce keys or your WordPress username and application password."), "warn")
+            return
+        if pw and not user:
+            notify(t("WordPress username is required with the application password."), "warn")
             return
         s = self.site or Site(id=new_id(), name="", url="")
         s.name = self.name.text().strip() or domain_of(url)
         s.url = url
-        s.wp_user = self.user.text().strip()
-        s.use_woo_keys = self.r_keys.isChecked()
-        secrets.set(secret_key(s.id, "wp_password"), self.app_pw.text().strip())
-        secrets.set(secret_key(s.id, "ck"), self.ck.text().strip() if s.use_woo_keys else "")
-        secrets.set(secret_key(s.id, "cs"), self.cs.text().strip() if s.use_woo_keys else "")
+        s.wp_user = user
+        s.use_woo_keys = use_keys
+        secrets.set(secret_key(s.id, "wp_password"), pw)
+        secrets.set(secret_key(s.id, "ck"), ck if use_keys else "")
+        secrets.set(secret_key(s.id, "cs"), cs if use_keys else "")
         if not self.site:
             cfg.add_site(s)
         cfg.save()
@@ -139,7 +174,7 @@ class SettingsPage(QWidget):
         lay.addWidget(self.tabs, 1)
         self._sites_tab()
         self._ai_tab()
-        self._server_tab()
+        self._privacy_tab()
         self._appearance_tab()
         self._about_tab()
 
@@ -339,7 +374,7 @@ class SettingsPage(QWidget):
 
     def check_quota(self):
         if not cfg.server_url:
-            notify(t("Set the server URL in the 'Server & privacy' tab first."), "warn")
+            notify(t("Free AI is not available right now."), "warn")
             return
 
         def work():
@@ -366,56 +401,31 @@ class SettingsPage(QWidget):
         run_async(work, ok=done, err=lambda e: self.quota_lbl.setText("❌ " + str(e)))
 
 
-    # ----------------------------------------------------------- server ---
-    def _server_tab(self):
+    # ---------------------------------------------------------- privacy ---
+    def _privacy_tab(self):
         w = QWidget()
         v = QVBoxLayout(w)
-        f = QFormLayout()
-        self.server_url = ltr(QLineEdit(cfg.server_url))
-        self.server_url.setPlaceholderText("https://api.example.com")
-        f.addRow(t("Server URL"), self.server_url)
-        v.addLayout(f)
         box = QGroupBox(t("Privacy"))
         bl = QVBoxLayout(box)
-        self.cb_tel = QCheckBox(t("Send anonymous usage statistics (enabled by default)"))
+        bl.addWidget(label(
+            t("WooDesk only sends simple, anonymous statistics to help improve the app: the app version and the operating system. "
+              "It never sends passwords, keys, products, posts or customers."),
+            muted=True, wrap=True))
+        self.cb_tel = QCheckBox(t("Send simple anonymous statistics"))
         self.cb_tel.setChecked(cfg.telemetry)
+        bl.addWidget(self.cb_tel)
         self.cb_news = QCheckBox(t("Receive announcements from the project"))
         self.cb_news.setChecked(cfg.announcements)
-        bl.addWidget(self.cb_tel)
-        bl.addWidget(label(
-            t("If enabled the app sends, about once a day: a random installation ID, app version, operating system, interface language and the DOMAIN names of the sites you added. "
-              "It never sends passwords, API keys, products, posts, customers or orders. Turning it off also deletes the site list stored on the server."),
-            muted=True, wrap=True))
         bl.addWidget(self.cb_news)
         v.addWidget(box)
-        self.srv_result = QLabel("")
-        v.addWidget(self.srv_result)
         row = QHBoxLayout()
-        row.addWidget(button(t("Test server"), slot=self.test_server))
-        row.addWidget(button(t("Show data that would be sent"), slot=self.preview_payload))
         row.addStretch()
-        row.addWidget(button(t("Save"), primary=True, slot=self.save_server))
+        row.addWidget(button(t("Save"), primary=True, slot=self.save_privacy))
         v.addLayout(row)
         v.addStretch()
-        self.tabs.addTab(w, t("Server & privacy"))
+        self.tabs.addTab(w, t("Privacy"))
 
-    def test_server(self):
-        url = normalize_url(self.server_url.text())
-        run_async(lambda: ServerClient(url).config(),
-                  ok=lambda c: self.srv_result.setText("✅ " + t("Connected") + f" - free AI: {'on' if c.get('free_ai_enabled') else 'off'}"),
-                  err=lambda e: self.srv_result.setText("❌ " + str(e)))
-
-    def preview_payload(self):
-        payload = {"install_id": cfg.install_id or "(assigned on first contact)", "app_version": __version__,
-                   "os": f"{platform.system()} {platform.release()}", "lang": cfg.language,
-                   "sites": sorted({domain_of(s.url) for s in cfg.sites})}
-        self.srv_result.setText("<pre>" + json.dumps(payload, indent=2, ensure_ascii=False) + "</pre>")
-
-    def save_server(self):
-        new_url = normalize_url(self.server_url.text())
-        if new_url != cfg.server_url:
-            cfg.server_url = new_url
-            self.ctx.reset_server_session()
+    def save_privacy(self):
         if self.cb_tel.isChecked() != cfg.telemetry:
             self.ctx.set_telemetry(self.cb_tel.isChecked())
         cfg.announcements = self.cb_news.isChecked()
@@ -465,5 +475,7 @@ class SettingsPage(QWidget):
         v = QVBoxLayout(w)
         v.addWidget(label(f"WooDesk {__version__}", "h1"))
         v.addWidget(label(t("Open-source WooCommerce & WordPress desktop manager with AI. MIT licence."), wrap=True))
+        v.addWidget(label(t(ABOUT_TEXT), wrap=True))
+        v.addWidget(label(t(CREDENTIALS_TEXT), muted=True, wrap=True))
         v.addStretch()
         self.tabs.addTab(w, t("About"))

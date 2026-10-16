@@ -22,6 +22,11 @@ class DashboardPage(QWidget):
         self.head = PageHeader(t("Dashboard"), "")
         self.head.add_action(button(t("Refresh"), slot=self.load))
         lay.addWidget(self.head)
+        self.stores = Card()
+        self.stores.lay.addWidget(label(t("Your stores"), "h2"))
+        self.stores_row = QVBoxLayout()
+        self.stores.lay.addLayout(self.stores_row)
+        lay.addWidget(self.stores)
         grid = QGridLayout()
         self.cards = {k: StatCard(title) for k, title in [
             ("products", t("Products")), ("published", t("Published products")), ("outofstock", t("Out of stock")),
@@ -56,6 +61,7 @@ class DashboardPage(QWidget):
 
     def on_show(self):
         self.render_news()
+        self.render_stores()
         if not self._loaded_once and self.ctx.has_site():
             self._loaded_once = True
             self.load()
@@ -64,16 +70,36 @@ class DashboardPage(QWidget):
         self._loaded_once = False
         self.on_show()
 
+    def render_stores(self):
+        while self.stores_row.count():
+            item = self.stores_row.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+        if not cfg.sites:
+            self.stores_row.addWidget(label(t("No site yet - add one in Settings"), muted=True))
+            return
+        for s in cfg.sites:
+            active = s.id == cfg.active_site
+            b = button(("● " if active else "○ ") + f"{s.name}    {s.url}", primary=active)
+            if not active:
+                b.clicked.connect(lambda _=False, sid=s.id: self.ctx.set_active_site(sid))
+            self.stores_row.addWidget(b)
+
     def load(self):
         if not self.ctx.has_site():
             return
 
         def work():
-            woo, wp = self.ctx.woo(), self.ctx.wp()
-            # 7 independent requests: run them side by side instead of one after another
-            c, recent, posts, post_drafts = run_parallel([
-                woo.counts, lambda: woo.products(1, 5)[0], lambda: wp.count_posts("publish"), lambda: wp.count_posts("draft")])
-            return {"counts": c, "recent": recent, "posts": posts, "post_drafts": post_drafts}
+            woo = self.ctx.woo()
+            tasks = [woo.counts, lambda: woo.products(1, 5)[0]]
+            has_wp = self.ctx.has_wp()
+            if has_wp:
+                wp = self.ctx.wp()
+                tasks += [lambda: wp.count_posts("publish"), lambda: wp.count_posts("draft")]
+            res = run_parallel(tasks)
+            return {"counts": res[0], "recent": res[1],
+                    "posts": res[2] if has_wp else "-", "post_drafts": res[3] if has_wp else "-"}
 
         def done(d):
             c = d["counts"]

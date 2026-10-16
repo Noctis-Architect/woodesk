@@ -125,10 +125,14 @@ class Card(QFrame):
 class StatCard(Card):
     def __init__(self, title: str, value: str = "-"):
         super().__init__()
+        align = Qt.AlignRight if cfg.language == "fa" else Qt.AlignLeft
         self.value = QLabel(value)
         self.value.setObjectName("statValue")
+        self.value.setAlignment(align | Qt.AlignVCenter)
         self.lay.addWidget(self.value)
-        self.lay.addWidget(label(title, muted=True))
+        title_lbl = label(title, muted=True)
+        title_lbl.setAlignment(align | Qt.AlignVCenter)
+        self.lay.addWidget(title_lbl)
 
     def set(self, v) -> None:
         self.value.setText(str(v))

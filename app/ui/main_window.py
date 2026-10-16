@@ -3,11 +3,11 @@ from __future__ import annotations
 import html
 import webbrowser
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QGuiApplication, QIcon
-from PySide6.QtWidgets import (QApplication, QComboBox, QDialog, QHBoxLayout, QLabel, QMainWindow, QMessageBox,
-                               QPushButton, QStackedWidget, QSystemTrayIcon, QTextBrowser, QToolButton, QVBoxLayout,
-                               QWidget, QButtonGroup)
+from PySide6.QtCore import QEasingCurve, QPropertyAnimation, Qt
+from PySide6.QtGui import QGuiApplication, QIcon, QPixmap
+from PySide6.QtWidgets import (QApplication, QButtonGroup, QComboBox, QDialog, QGraphicsOpacityEffect, QHBoxLayout,
+                               QLabel, QMainWindow, QPushButton, QStackedWidget, QSystemTrayIcon, QTextBrowser,
+                               QToolButton, QVBoxLayout, QWidget)
 
 from .. import APP_NAME, __version__
 from ..core.config import cfg
@@ -47,13 +47,26 @@ class MainWindow(QMainWindow):
         sl = QVBoxLayout(side)
         sl.setContentsMargins(10, 0, 10, 12)
         brand_logo = branding_path("woocommerce-logo-256.png")
+        brand = QWidget()
+        brand.setObjectName("brand")
+        bl = QHBoxLayout(brand)
+        bl.setContentsMargins(12, 16, 12, 10)
+        bl.setSpacing(10)
         if brand_logo.exists():
-            logo = QLabel(f'<img src="{brand_logo.as_posix()}" height="26" width="26"> &nbsp;{APP_NAME}')
-            logo.setTextFormat(Qt.RichText)
-        else:
-            logo = QLabel("🛒 " + APP_NAME)
-        logo.setObjectName("logo")
-        sl.addWidget(logo)
+            ic = QLabel()
+            ic.setPixmap(QPixmap(str(brand_logo)).scaled(32, 32, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            bl.addWidget(ic)
+        names = QVBoxLayout()
+        names.setSpacing(0)
+        brand_name = QLabel(APP_NAME)
+        brand_name.setObjectName("brandName")
+        names.addWidget(brand_name)
+        brand_sub = QLabel(t("WooCommerce Manager"))
+        brand_sub.setObjectName("brandSub")
+        names.addWidget(brand_sub)
+        bl.addLayout(names)
+        bl.addStretch()
+        sl.addWidget(brand)
         self.stack = QStackedWidget()
         self.pages: dict[str, QWidget] = {}
         self.group = QButtonGroup(self)
@@ -67,7 +80,7 @@ class MainWindow(QMainWindow):
         self.pages["feedback"] = FeedbackPage(ctx)
         self.pages["settings"] = SettingsPage(ctx, self.apply_theme)
         for key, icon_, text in [("dashboard", "🏠", "Dashboard"), ("products", "📦", "Products"), ("posts", "📝", "Posts"),
-                                 ("media", "🖼", "Media"), ("ai", "✨", "AI Studio"), ("feedback", "💬", "Feedback"), ("settings", "⚙", "Settings")]:
+                                 ("media", "🖼", "Media"), ("ai", "✨", "AI"), ("feedback", "💬", "Feedback"), ("settings", "⚙", "Settings")]:
             if key == "feedback":
                 sl.addStretch()
             b = QPushButton(f"{icon_}  {t(text)}")
@@ -131,9 +144,23 @@ class MainWindow(QMainWindow):
         self.nav[key].setChecked(True)
         page = self.pages[key]
         self.stack.setCurrentWidget(page)
+        self._fade(page)
         page.on_show()
         if action == "new":
             (page.new_product if key == "products" else page.new_post)()
+
+    def _fade(self, page: QWidget) -> None:
+        """A short, subtle fade-in when switching pages."""
+        effect = QGraphicsOpacityEffect(page)
+        page.setGraphicsEffect(effect)
+        anim = QPropertyAnimation(effect, b"opacity", self)
+        anim.setDuration(150)
+        anim.setStartValue(0.0)
+        anim.setEndValue(1.0)
+        anim.setEasingCurve(QEasingCurve.OutCubic)
+        anim.finished.connect(lambda p=page: p.setGraphicsEffect(None))
+        self._fade_anim = anim
+        anim.start()
 
     # ---- sites
     def _fill_sites(self) -> None:
@@ -233,19 +260,3 @@ class MainWindow(QMainWindow):
 
         dlg.exec()
         self.ctx.mark_announcements_seen()
-
-    # ---- first run
-    def first_run_notice(self) -> None:
-        if cfg.telemetry_notice_shown or not cfg.server_url:
-            return
-        box = QMessageBox(self)
-        box.setIcon(QMessageBox.Information)
-        box.setWindowTitle(t("Anonymous statistics"))
-        box.setText(t("WooDesk is open source and sends anonymous usage statistics to help the project (app version, OS, language and the domains of connected sites - never passwords, keys or store data). You can turn this off any time in Settings > Server & privacy."))
-        keep = box.addButton(t("OK, keep enabled"), QMessageBox.AcceptRole)
-        off = box.addButton(t("Disable"), QMessageBox.RejectRole)
-        box.exec()
-        if box.clickedButton() is off:
-            self.ctx.set_telemetry(False)
-        cfg.telemetry_notice_shown = True
-        cfg.save()

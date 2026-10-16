@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import sys
 
-from PySide6.QtCore import QTimer, Qt
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication
 
@@ -91,6 +91,5 @@ def main() -> None:
 
     win.show()
     ctx.start_background()
-    QTimer.singleShot(800, win.first_run_notice)
     sys.exit(app.exec())
 

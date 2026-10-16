@@ -141,4 +141,35 @@ FA.update({
     "Switch to dark theme": "تغییر به تم تیره",
     "Switch to light theme": "تغییر به تم روشن",
     "Restart now to apply the language?": "برای اعمال زبان، برنامه الان دوباره باز شود؟",
+    # --- v1.0.2: simpler privacy, clearer credentials, multi-store dashboard ---
+    "AI": "هوش مصنوعی",
+    "WooCommerce Manager": "مدیریت ووکامرس",
+    "Your stores": "فروشگاه‌های شما",
+    "WooCommerce - products & orders": "ووکامرس - محصولات و سفارش‌ها",
+    "WooCommerce > Settings > Advanced > REST API > add a key with Read/Write access. Used for products and orders.":
+        "ووکامرس › تنظیمات › پیشرفته › REST API › یک کلید با دسترسی خواندن/نوشتن بسازید. برای محصولات و سفارش‌ها استفاده می‌شود.",
+    "Consumer key": "کلید مصرف‌کننده",
+    "Consumer secret": "رمز مصرف‌کننده",
+    "WordPress - posts & media (optional)": "وردپرس - مقالات و رسانه‌ها (اختیاری)",
+    "WordPress > Users > Profile > Application Passwords. Only needed for posts and media - create one with any name.":
+        "وردپرس › کاربران › پروفایل › Application Passwords. فقط برای مقالات و رسانه لازم است؛ با هر نامی بسازید.",
+    "Your credentials are stored securely by your operating system (keyring) and are never sent anywhere except your own site.":
+        "اطلاعات ورود شما به‌صورت امن توسط سیستم‌عامل (Keyring) نگهداری می‌شود و هرگز به جایی جز سایت خودتان فرستاده نمی‌شود.",
+    "Site URL is required.": "آدرس سایت الزامی است.",
+    "Provide either WooCommerce keys or your WordPress username and application password.":
+        "یا کلیدهای ووکامرس را وارد کنید یا نام کاربری و رمز برنامه وردپرس را.",
+    "WordPress username is required with the application password.":
+        "در صورت وارد کردن رمز برنامه، نام کاربری وردپرس هم الزامی است.",
+    "To manage posts and media, add your WordPress username and application password in Settings.":
+        "برای مدیریت مقالات و رسانه‌ها، نام کاربری و رمز برنامه وردپرس را در تنظیمات وارد کنید.",
+    "WooDesk only sends simple, anonymous statistics to help improve the app: the app version and the operating system. It never sends passwords, keys, products, posts or customers.":
+        "ووکی‌دسک فقط آمار ساده و ناشناس برای بهتر شدن برنامه می‌فرستد: نسخه‌ی برنامه و سیستم‌عامل. هرگز رمز، کلید، محصول، مقاله یا مشتری ارسال نمی‌شود.",
+    "Send simple anonymous statistics": "ارسال آمار ساده و ناشناس",
+    "Free AI is not available right now.": "هوش مصنوعی رایگان در حال حاضر در دسترس نیست.",
+    "Write any text with AI - the result can be copied into your products and posts":
+        "هر متنی را با هوش مصنوعی بنویس؛ نتیجه را می‌توانید در محصولات و مقالات کپی کنید",
+    "WooDesk is a free, open-source desktop app for managing your WooCommerce store and WordPress blog. You can browse, create and edit products, stock, prices, categories, tags, posts and media, all through your site's official REST API. The built-in AI assistant writes product descriptions, post drafts, excerpts, tags and SEO text in the language you choose.\n\nWooDesk talks directly to your own site using credentials you create yourself. Nothing is routed through third parties, and passwords and API keys are stored securely by your operating system's keyring. The optional anonymous statistics can be turned off in the Privacy tab.":
+        "ووکی‌دسک یک برنامه‌ی دسکتاپ رایگان و متن‌باز برای مدیریت فروشگاه ووکامرس و وبلاگ وردپرس شماست. می‌توانید محصولات، موجودی، قیمت‌ها، دسته‌ها، برچسب‌ها، مقالات و رسانه‌ها را از طریق REST API رسمی سایت‌تان مرور، ایجاد و ویرایش کنید. دستیار هوش مصنوعی داخلی هم توضیحات محصول، پیش‌نویس مقاله، چکیده، برچسب و متن سئو را به زبان انتخابی شما می‌نویسد.\n\nووکی‌دسک مستقیماً با اطلاعات ورودی که خودتان می‌سازید به سایت خودتان وصل می‌شود. هیچ داده‌ای از طرف واسطه‌ها رد نمی‌شود و رمزها و کلیدهای API به‌صورت امن در Keyring سیستم‌عامل ذخیره می‌شوند. آمار ناشناس اختیاری را هم می‌توانید در تب حریم خصوصی خاموش کنید.",
+    "Products and orders use a WooCommerce key (Settings > Advanced > REST API). Posts and media use a WordPress application password (Users > Profile > Application Passwords). Both are created by you and can be revoked at any time; only the access you grant is used.":
+        "محصولات و سفارش‌ها از کلید ووکامرس (تنظیمات › پیشرفته › REST API) استفاده می‌کنند. مقالات و رسانه‌ها از رمز برنامه‌ی وردپرس (کاربران › پروفایل › Application Passwords). هر دو را خودتان می‌سازید و هر زمان می‌توانید باطل کنید؛ فقط همان دسترسی که می‌دهید استفاده می‌شود.",
 })

@@ -270,6 +270,8 @@ class PostsPage(QWidget):
         lay.addWidget(self.pager)
 
     def on_show(self):
+        if not self.ctx.has_wp():
+            return
         if not self._loaded_once and self.ctx.has_site():
             self._loaded_once = True
             run_async(self.ctx.wp_categories, ok=lambda c: self.cat_names.update({x["id"]: x["name"] for x in c}), err=lambda e: None)
@@ -284,6 +286,9 @@ class PostsPage(QWidget):
             self.page = page
         if not self.ctx.has_site():
             notify(t("Add a site in Settings first."), "warn")
+            return
+        if not self.ctx.has_wp():
+            notify(t("To manage posts and media, add your WordPress username and application password in Settings."), "warn")
             return
         pg, q, st = self.page, self.search.text().strip(), self.f_status.currentData()
         self._req += 1
@@ -307,6 +312,9 @@ class PostsPage(QWidget):
     def new_post(self):
         if not self.ctx.has_site():
             notify(t("Add a site in Settings first."), "warn")
+            return
+        if not self.ctx.has_wp():
+            notify(t("To manage posts and media, add your WordPress username and application password in Settings."), "warn")
             return
         if PostEditor(self.ctx, None, self).exec() == QDialog.Accepted:
             self.load(1)

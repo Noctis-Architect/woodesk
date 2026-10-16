@@ -27,7 +27,7 @@ class AIStudioPage(QWidget):
         self.ctx = ctx
         lay = QVBoxLayout(self)
         lay.setContentsMargins(24, 20, 24, 16)
-        lay.addWidget(PageHeader(t("AI Studio"), t("A scratchpad for any AI task - results can be copied into your products and posts")))
+        lay.addWidget(PageHeader(t("AI"), t("Write any text with AI - the result can be copied into your products and posts")))
         top = QHBoxLayout()
         self.task = QComboBox()
         for k, v in TASKS:

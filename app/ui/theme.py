@@ -67,40 +67,42 @@ QMainWindow, QDialog, QStackedWidget, #page {{ background: {p['bg']}; }}
 QToolTip {{ background: {p['surface']}; color: {p['text']}; border: 1px solid {p['border']}; padding: 4px; }}
 #sidebar {{ background: {p['sidebar']}; }}
 #sidebar QLabel {{ color: {p['sidebar_text']}; }}
-#logo {{ color: #ffffff; font-size: 20px; font-weight: bold; padding: 18px 12px 12px 12px; }}
-QPushButton#nav {{ background: transparent; color: {p['sidebar_text']}; border: none; border-radius: 8px;
+#brandName {{ color: #ffffff; font-size: 19px; font-weight: bold; }}
+#brandSub {{ color: {p['sidebar_text']}; font-size: 11px; }}
+QPushButton#nav {{ background: transparent; color: {p['sidebar_text']}; border: none; border-radius: 6px;
     padding: 10px 14px; text-align: start; font-size: 14px; }}
 QPushButton#nav:hover {{ background: {p['sidebar_active']}; color: #fff; }}
 QPushButton#nav:checked {{ background: {p['primary']}; color: #fff; font-weight: bold; }}
 #topbar {{ background: {p['surface']}; border-bottom: 1px solid {p['border']}; }}
-QFrame#card {{ background: {p['surface']}; border: 1px solid {p['border']}; border-radius: 12px; }}
+QFrame#card {{ background: {p['surface']}; border: 1px solid {p['border']}; border-radius: 10px; }}
 QLabel#h1 {{ font-size: 22px; font-weight: bold; }}
 QLabel#h2 {{ font-size: 15px; font-weight: bold; }}
 QLabel#muted, QLabel[muted="true"] {{ color: {p['muted']}; }}
 QLabel#statValue {{ font-size: 26px; font-weight: bold; color: {p['primary']}; }}
-QLabel#chip {{ background: {p['select']}; color: {p['primary']}; border-radius: 9px; padding: 2px 10px; }}
+QLabel#chip {{ background: {p['select']}; color: {p['primary']}; border-radius: 7px; padding: 2px 10px; }}
 QLineEdit, QPlainTextEdit, QTextEdit, QTextBrowser, QComboBox, QSpinBox, QDoubleSpinBox, QDateTimeEdit, QDateEdit {{
-    background: {p['input']}; border: 1px solid {p['border']}; border-radius: 8px; padding: 6px 8px;
+    background: {p['input']}; border: 1px solid {p['border']}; border-radius: 6px; padding: 6px 8px;
     selection-background-color: {p['primary']}; selection-color: #fff; }}
 QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus {{ border: 1px solid {p['primary']}; }}
 QComboBox QAbstractItemView {{ background: {p['surface']}; border: 1px solid {p['border']}; selection-background-color: {p['primary']}; selection-color: #fff; }}
-QPushButton {{ background: {p['surface']}; border: 1px solid {p['border']}; border-radius: 8px; padding: 7px 14px; }}
+QPushButton {{ background: {p['surface']}; border: 1px solid {p['border']}; border-radius: 6px; padding: 7px 14px; }}
 QPushButton:hover {{ background: {p['hover']}; }}
 QPushButton:disabled {{ color: {p['muted']}; }}
 QPushButton[primary="true"] {{ background: {p['primary']}; color: #fff; border: 1px solid {p['primary']}; font-weight: bold; }}
 QPushButton[primary="true"]:hover {{ background: {p['primary_hover']}; }}
+QPushButton[primary="true"]:disabled {{ background: {p['muted']}; border: 1px solid {p['muted']}; color: #fff; }}
 QPushButton[danger="true"] {{ color: {p['danger']}; border: 1px solid {p['danger']}; }}
 QPushButton[danger="true"]:hover {{ background: {p['danger']}; color: #fff; }}
-QToolButton {{ background: {p['surface']}; border: 1px solid {p['border']}; border-radius: 8px; padding: 6px 10px; }}
+QToolButton {{ background: {p['surface']}; border: 1px solid {p['border']}; border-radius: 6px; padding: 6px 10px; }}
 QToolButton:hover {{ background: {p['hover']}; }}
 QToolButton::menu-indicator {{ image: none; }}
-QTableWidget, QListWidget {{ background: {p['surface']}; border: 1px solid {p['border']}; border-radius: 10px;
+QTableWidget, QListWidget {{ background: {p['surface']}; border: 1px solid {p['border']}; border-radius: 8px;
     gridline-color: {p['border']}; alternate-background-color: {p['bg']}; outline: 0; }}
 QTableWidget::item {{ padding: 4px; border: none; }}
 QTableWidget::item:selected, QListWidget::item:selected {{ background: {p['select']}; color: {p['text']}; }}
 QHeaderView::section {{ background: {p['surface']}; color: {p['muted']}; border: none; border-bottom: 1px solid {p['border']};
     padding: 8px; font-weight: bold; }}
-QTabWidget::pane {{ border: 1px solid {p['border']}; border-radius: 10px; background: {p['surface']}; top: -1px; }}
+QTabWidget::pane {{ border: 1px solid {p['border']}; border-radius: 8px; background: {p['surface']}; top: -1px; }}
 QTabBar::tab {{ background: transparent; padding: 9px 16px; margin: 0 2px; border-bottom: 2px solid transparent; color: {p['muted']}; }}
 QTabBar::tab:selected {{ color: {p['primary']}; border-bottom: 2px solid {p['primary']}; font-weight: bold; }}
 QScrollBar:vertical {{ background: transparent; width: 10px; margin: 2px; }}
@@ -108,12 +110,12 @@ QScrollBar::handle:vertical {{ background: {p['border']}; border-radius: 4px; mi
 QScrollBar:horizontal {{ background: transparent; height: 10px; margin: 2px; }}
 QScrollBar::handle:horizontal {{ background: {p['border']}; border-radius: 4px; min-width: 30px; }}
 QScrollBar::add-line, QScrollBar::sub-line {{ width: 0; height: 0; }}
-QMenu {{ background: {p['surface']}; border: 1px solid {p['border']}; border-radius: 8px; padding: 4px; }}
-QMenu::item {{ padding: 7px 22px; border-radius: 6px; }}
+QMenu {{ background: {p['surface']}; border: 1px solid {p['border']}; border-radius: 6px; padding: 4px; }}
+QMenu::item {{ padding: 7px 22px; border-radius: 4px; }}
 QMenu::item:selected {{ background: {p['primary']}; color: #fff; }}
 QProgressBar {{ border: 1px solid {p['border']}; border-radius: 6px; text-align: center; background: {p['input']}; }}
 QProgressBar::chunk {{ background: {p['primary']}; border-radius: 5px; }}
-QGroupBox {{ border: 1px solid {p['border']}; border-radius: 10px; margin-top: 14px; padding: 12px; }}
+QGroupBox {{ border: 1px solid {p['border']}; border-radius: 8px; margin-top: 14px; padding: 12px; }}
 QGroupBox::title {{ subcontrol-origin: margin; left: 12px; padding: 0 6px; color: {p['muted']}; }}
 QCheckBox, QRadioButton {{ spacing: 8px; }}
 QPushButton[ai="true"] {{ background: {p['select']}; color: {p['primary']}; border: 1px solid {p['primary']}; font-weight: bold; }}
@@ -122,5 +124,5 @@ QPushButton[ai="true"]:disabled {{ background: {p['hover']}; color: {p['muted']}
 QToolButton[ai="true"] {{ background: {p['select']}; color: {p['primary']}; border: 1px solid {p['primary']}; padding: 6px 8px; }}
 QToolButton[ai="true"]:hover {{ background: {p['primary']}; color: #fff; }}
 QToolButton[ai="true"]:disabled {{ background: {p['hover']}; color: {p['muted']}; border: 1px solid {p['border']}; }}
-#toast {{ border-radius: 10px; padding: 10px 18px; color: #fff; font-weight: bold; }}
+#toast {{ border-radius: 8px; padding: 10px 18px; color: #fff; font-weight: bold; }}
 """

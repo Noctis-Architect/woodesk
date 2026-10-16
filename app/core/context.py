@@ -53,6 +53,11 @@ class AppContext(QObject):
     def has_site(self) -> bool:
         return cfg.site() is not None
 
+    def has_wp(self) -> bool:
+        """True when WordPress credentials (username + application password) are configured."""
+        s = cfg.site()
+        return bool(s and s.wp_user and secrets.get(secret_key(s.id, "wp_password")))
+
     def reload_clients(self) -> None:
         self._wp = self._woo = None
         self._cache.clear()

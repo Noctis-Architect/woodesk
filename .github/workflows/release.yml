@@ -1,0 +1,17 @@
+name: Release (Windows)
+on:
+  push:
+    tags: ["v*"]
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: powershell -ExecutionPolicy Bypass -File packaging/build_windows.ps1
+        env:
+          WOODESK_SERVER_URL: ${{ secrets.WOODESK_SERVER_URL }}
+      - run: Compress-Archive -Path dist/WooDesk -DestinationPath dist/WooDesk-windows.zip
+      - uses: softprops/action-gh-release@v2
+        with: { files: dist/WooDesk-windows.zip }

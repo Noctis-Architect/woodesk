@@ -1,0 +1,41 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+build/
+dist/
+*.spec
+*.spec.bak
+packaging/Output/
+packaging/*.exe
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Server backend (private / excluded from repo)
+server/
+
+# Unit test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Logs and databases
+*.log
+*.sqlite3
+*.db
+
+# Temporary / OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+/tmp/shots/

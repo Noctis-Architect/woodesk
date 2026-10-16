@@ -38,6 +38,12 @@ python -m nuitka `
   --nofollow-import-to=pytest,unittest `
   run.py
 
+# Nuitka in standalone mode creates dist\WooDesk.dist; normalize to dist\WooDesk
+if (Test-Path dist\WooDesk.dist) {
+    if (Test-Path dist\WooDesk) { Remove-Item -Recurse -Force dist\WooDesk }
+    Move-Item -Path dist\WooDesk.dist -Destination dist\WooDesk
+}
+
 Write-Host "==> Standalone app built successfully at: dist\WooDesk\WooDesk.exe"
 
 # Build Inno Setup installer (.exe) if ISCC is available
@@ -51,6 +57,9 @@ if (Get-Command iscc -ErrorAction SilentlyContinue) {
 if ($isccPath) {
     Write-Host "==> Compiling installer (.exe) with Inno Setup..."
     & $isccPath packaging\installer.iss
+    if ($LASTEXITCODE -ne 0) {
+        throw "Inno Setup compilation failed with exit code $LASTEXITCODE"
+    }
     Write-Host "==> Installer created: dist\WooDesk-Setup.exe"
 } else {
     Write-Host "==> Notice: Inno Setup (iscc) not found in PATH. Skipping installer compilation."

@@ -8,13 +8,19 @@ from .http import ApiError, make_client, normalize_url, raise_for
 
 
 class ServerClient(AIClient):
-    def __init__(self, base_url: str, token: str = "", client: httpx.Client | None = None):
+    def __init__(self, base_url: str, token: str = "", client: httpx.Client | None = None, gmail: str = ""):
         self.base = normalize_url(base_url)
         self.token = token
+        self.gmail = gmail.strip().lower()
         self.http = client or make_client(timeout=90)
 
     def _headers(self) -> dict:
-        return {"Authorization": f"Bearer {self.token}"} if self.token else {}
+        h = {}
+        if self.token:
+            h["Authorization"] = f"Bearer {self.token}"
+        if self.gmail:
+            h["X-User-Gmail"] = self.gmail
+        return h
 
     def _call(self, method: str, path: str, **kw):
         if not self.base:
@@ -60,5 +66,20 @@ class ServerClient(AIClient):
         payload = {"messages": messages, "temperature": temperature, "max_tokens": max_tokens}
         if model:
             payload["model"] = model
+        if self.gmail:
+            payload["gmail"] = self.gmail
         data = self._call("POST", "/v1/ai/chat", json=payload)
         return AIResult(data.get("content", ""), data.get("usage") or {}, data.get("remaining"))
+
+    def send_feedback(self, subject: str, message: str, email: str = "", file_bytes: bytes | None = None, filename: str | None = None) -> dict:
+        import base64
+        payload = {
+            "subject": subject.strip(),
+            "message": message.strip(),
+            "email": (email or self.gmail).strip(),
+        }
+        if file_bytes:
+            payload["file_base64"] = base64.b64encode(file_bytes).decode("ascii")
+            payload["filename"] = filename or "attachment"
+        return self._call("POST", "/v1/feedback", json=payload)
+

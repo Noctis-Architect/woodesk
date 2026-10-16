@@ -67,7 +67,20 @@ class ModuleUpdater:
 
         try:
             logger.info("Checking remote manifest: %s", self.manifest_url)
-            resp = client.get(self.manifest_url)
+            headers = {}
+            try:
+                from .config import cfg
+                from .secrets import secrets
+                if cfg.install_id:
+                    headers["X-Install-Id"] = cfg.install_id
+                if cfg.ai.gmail:
+                    headers["X-User-Gmail"] = cfg.ai.gmail
+                tok = secrets.get("server:token")
+                if tok:
+                    headers["Authorization"] = f"Bearer {tok}"
+            except Exception:
+                pass
+            resp = client.get(self.manifest_url, headers=headers)
             resp.raise_for_status()
             manifest = resp.json()
 

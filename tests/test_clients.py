@@ -166,6 +166,8 @@ def test_server_client_mock():
             return httpx.Response(200, json={"used": 1, "limit": 10})
         if req.url.path == "/v1/announcements":
             return httpx.Response(200, json={"items": [{"id": 1, "text": "hello"}]})
+        if req.url.path == "/v1/feedback":
+            return httpx.Response(200, json={"ok": True, "id": 42})
         if req.url.path == "/v1/telemetry":
             return httpx.Response(200, json={"ok": True})
         if req.url.path == "/v1/ai/chat":
@@ -175,7 +177,7 @@ def test_server_client_mock():
             return httpx.Response(200, json={"content": "mock pong", "usage": {"total_tokens": 5}, "remaining": 9})
         return httpx.Response(404)
 
-    sc = ServerClient("http://127.0.0.1:8097", client=httpx.Client(transport=httpx.MockTransport(h)))
+    sc = ServerClient("http://127.0.0.1:8097", client=httpx.Client(transport=httpx.MockTransport(h)), gmail="test@gmail.com")
     assert sc.config()["free_ai_enabled"] is True
     assert sc.free_models() == ["gpt-4o-mini"]
     reg = sc.register("0.1.0", "Windows 11")
@@ -186,6 +188,9 @@ def test_server_client_mock():
     assert len(sc.announcements("0.1.0", "fa")) == 1
     sc.telemetry({"app_version": "0.1.0"})
     sc.telemetry_delete()
+
+    fb_res = sc.send_feedback("پیشنهاد", "متن بازخورد", file_bytes=b"sample", filename="sample.txt")
+    assert fb_res["ok"] is True and fb_res["id"] == 42
 
     res = sc.chat([{"role": "user", "content": "hi"}])
     assert res.text == "mock pong" and res.remaining == 9
@@ -200,18 +205,19 @@ def test_server_client_against_real_server(tmp_path):
     if not os.path.isdir(server_dir):
         pytest.skip("server directory not present")
 
+    os.environ.update(ADMIN_TOKEN="adm", FREE_AI_API_KEYS="k", FREE_DAILY_REQUESTS="2", RATE_PER_MINUTE="50",
+                      REGISTER_PER_IP_PER_DAY="1000", DATABASE_PATH=str(tmp_path / "s.db"))
     try:
         import uvicorn
         sys.path.insert(0, server_dir)
         import importlib
-        for name in [n for n in sys.modules if n.startswith("woodesk_server")]:
+        for name in [n for n in list(sys.modules.keys()) if "woodesk_server" in n]:
             del sys.modules[name]
         srv = importlib.import_module("woodesk_server.main")
+        srv.settings = srv.Settings()
     except ImportError as e:
         pytest.skip(f"server dependencies not available: {e}")
 
-    os.environ.update(ADMIN_TOKEN="adm", FREE_AI_API_KEYS="k", FREE_DAILY_REQUESTS="2", RATE_PER_MINUTE="50",
-                      REGISTER_PER_IP_PER_DAY="1000", DATABASE_PATH=str(tmp_path / "s.db"))
     srv.UPSTREAM_TRANSPORT = httpx.MockTransport(lambda r: httpx.Response(200, json={"choices": [{"message": {"content": "pong"}}], "usage": {"total_tokens": 7}}))
     server = uvicorn.Server(uvicorn.Config(srv.app, host="127.0.0.1", port=8097, log_level="error"))
     threading.Thread(target=server.run, daemon=True).start()
@@ -220,7 +226,7 @@ def test_server_client_against_real_server(tmp_path):
         sc = ServerClient("http://127.0.0.1:8097")
         assert sc.config()["free_ai_enabled"] is True
         reg = sc.register("0.1.0", "Windows 11")
-        sc = ServerClient("http://127.0.0.1:8097", reg["token"])
+        sc = ServerClient("http://127.0.0.1:8097", reg["token"], gmail="test@gmail.com")
         r = sc.chat([{"role": "user", "content": "ping"}])
         assert r.text == "pong" and r.remaining == 1
         assert sc.quota()["used"] == 1

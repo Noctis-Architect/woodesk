@@ -109,13 +109,13 @@ class AppContext(QObject):
     def server(self) -> ServerClient:
         if not cfg.server_url:
             raise NotConfigured("Server URL is not set (Settings > Server & privacy).")
-        return ServerClient(cfg.server_url, secrets.get("server:token"))
+        return ServerClient(cfg.server_url, secrets.get("server:token"), gmail=cfg.ai.gmail)
 
     def ensure_registered(self) -> ServerClient:
         """Blocking - call from a worker thread."""
         srv = self.server()
         if srv.token and cfg.install_id:
-            sig = (cfg.server_url, srv.token)
+            sig = (cfg.server_url, srv.token, cfg.ai.gmail)
             if self._srv_cache and self._srv_cache[0] == sig:
                 return self._srv_cache[1]
             self._srv_cache = (sig, srv)
@@ -124,13 +124,18 @@ class AppContext(QObject):
         cfg.install_id = res["install_id"]
         secrets.set("server:token", res["token"])
         cfg.save()
-        return ServerClient(cfg.server_url, res["token"])
+        return ServerClient(cfg.server_url, res["token"], gmail=cfg.ai.gmail)
 
     def reset_server_session(self) -> None:
         cfg.install_id = ""
         self._srv_cache = None
         secrets.delete("server:token")
         cfg.save()
+
+    def send_feedback(self, subject: str, message: str, email: str = "", file_bytes: bytes | None = None, filename: str | None = None) -> dict:
+        """Sends feedback and optional attachment to the server. No local history kept."""
+        srv = self.ensure_registered()
+        return srv.send_feedback(subject, message, email or cfg.ai.gmail, file_bytes, filename)
 
     # ---- AI ------------------------------------------------------------
     def ai_client(self) -> AIClient:

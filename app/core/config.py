@@ -47,6 +47,7 @@ class AISettings:
     server_model: str = ""  # selected model when mode == "server"
     temperature: float = 0.7
     output_language: str = "fa"
+    gmail: str = ""  # required for server free AI tier
 
 
 

@@ -244,6 +244,9 @@ class SettingsPage(QWidget):
         v.addWidget(self.r_server)
         self.server_box = QGroupBox(t("Server free AI settings"))
         sf = QFormLayout(self.server_box)
+        self.gmail_input = ltr(QLineEdit(cfg.ai.gmail))
+        self.gmail_input.setPlaceholderText("yourname@gmail.com")
+        sf.addRow(t("Your Gmail (@gmail.com)"), self.gmail_input)
         self.server_model = ltr(QComboBox())
         self.server_model.setEditable(True)
         if cfg.ai.server_model:
@@ -304,9 +307,17 @@ class SettingsPage(QWidget):
         c = self._make_client()
         run_async(c.list_models, ok=lambda ms: (self.model.clear(), self.model.addItems(ms), notify(f"{len(ms)} " + t("models found"), "ok")), err=show_error)
 
-    def save_ai(self):
+    def save_ai(self) -> bool:
         a = cfg.ai
         a.mode = "server" if self.r_server.isChecked() else "custom"
+        gmail_val = self.gmail_input.text().strip().lower()
+        if a.mode == "server":
+            import re
+            if not gmail_val or not re.match(r"^[a-zA-Z0-9._%+-]+@gmail\.com$", gmail_val):
+                notify(t("A valid Gmail address (@gmail.com) is required to use the free AI tier."), "warn")
+                self.gmail_input.setFocus()
+                return False
+        a.gmail = gmail_val
         a.api_format = self.fmt.currentData()
         a.base_url = self.base_url.text().strip()
         a.model = self.model.currentText().strip()
@@ -316,9 +327,11 @@ class SettingsPage(QWidget):
         secrets.set("ai:api_key", self.api_key.text().strip())
         cfg.save()
         notify(t("AI settings saved"), "ok")
+        return True
 
     def test_ai(self):
-        self.save_ai()
+        if not self.save_ai():
+            return
         self.ai_result.setText(t("Testing..."))
         run_async(lambda: self.ctx.ai_chat([{"role": "user", "content": "Reply with the single word: OK"}], 20, 0),
                   ok=lambda r: self.ai_result.setText("✅ " + r.text[:200]),
@@ -330,7 +343,9 @@ class SettingsPage(QWidget):
             return
 
         def work():
+            cfg.ai.gmail = self.gmail_input.text().strip().lower()
             srv = self.ctx.ensure_registered()
+            srv.gmail = cfg.ai.gmail
             return srv.config(), srv.quota()
 
         def done(res):

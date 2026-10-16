@@ -17,18 +17,57 @@ from typing import Any, Callable
 logger = logging.getLogger(__name__)
 
 
+def _safe_mkdir(path: Path) -> None:
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+    except OSError as e:  # read-only install dir: keep going, the caller may still use an in-memory lookup
+        logger.warning("Could not create modules directory %s: %s", path, e)
+
+
+def _seed_dirs() -> list[Path]:
+    """Read-only locations where a bundled copy of the dynamic modules may live."""
+    dirs: list[Path] = []
+    meipass = getattr(sys, "_MEIPASS", None)  # PyInstaller
+    if meipass:
+        dirs.append(Path(meipass) / "modules")
+    if getattr(sys, "frozen", False):  # Nuitka / other frozen builds
+        exe_dir = Path(sys.executable).resolve().parent
+        dirs += [exe_dir / "modules", exe_dir / "_internal" / "modules"]
+    dirs.append(Path(__file__).resolve().parent.parent.parent / "modules")
+    return dirs
+
+
 def get_default_modules_dir() -> Path:
-    """Returns the dedicated modules directory (strictly `modules/` at project root)."""
+    """Returns a writable `modules/` directory for dynamic modules.
+
+    Source checkouts use the project-root `modules/` folder (so hot-reloads land in the repo).
+    Packaged/read-only installs (e.g. under Program Files) fall back to a per-user data directory
+    that is seeded once from the bundled copy of the modules.
+    """
     override = os.environ.get("WOODESK_MODULES_DIR")
     if override:
         p = Path(override).resolve()
-        p.mkdir(parents=True, exist_ok=True)
+        _safe_mkdir(p)
         return p
 
-    # Dedicated 'modules/' directory at root of project
-    root_modules = Path(__file__).resolve().parent.parent.parent / "modules"
-    root_modules.mkdir(parents=True, exist_ok=True)
-    return root_modules.resolve()
+    project_modules = Path(__file__).resolve().parent.parent.parent / "modules"
+    if project_modules.is_dir() and os.access(project_modules, os.W_OK):
+        return project_modules.resolve()
+
+    from .config import data_dir
+
+    target = (data_dir() / "modules").resolve()
+    _safe_mkdir(target)
+    seed = next((d for d in _seed_dirs() if d.is_dir()), None)
+    if seed and seed.resolve() != target:
+        for src in seed.glob("*.py"):
+            dst = target / src.name
+            if not dst.exists():
+                try:
+                    dst.write_bytes(src.read_bytes())
+                except OSError:
+                    pass
+    return target
 
 
 def validate_module_name(name: str) -> str:
@@ -52,7 +91,7 @@ class DynamicModuleManager:
         self._modules: dict[str, ModuleType] = {}
         self._last_known_good: dict[str, ModuleType] = {}
         self.modules_dir = Path(modules_dir).resolve() if modules_dir else get_default_modules_dir()
-        self.modules_dir.mkdir(parents=True, exist_ok=True)
+        _safe_mkdir(self.modules_dir)
 
         # Ensure dedicated modules directory is in sys.path
         dir_str = str(self.modules_dir)

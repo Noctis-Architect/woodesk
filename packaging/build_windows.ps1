@@ -1,5 +1,9 @@
-# Build a Windows release with Nuitka and Inno Setup:
-# powershell -ExecutionPolicy Bypass -File packaging\build_windows.ps1
+# Build a self-contained Windows release (all Python dependencies bundled) with PyInstaller
+# and an Inno Setup installer (.exe):
+#   powershell -ExecutionPolicy Bypass -File packaging\build_windows.ps1
+#
+# All prerequisites (Python runtime, PySide6/Qt, keyring, httpx, markdown, assets and the
+# dynamic modules) are bundled into dist\WooDesk, so end users do not need Python installed.
 
 param(
     [string]$ServerUrl = $env:WOODESK_SERVER_URL
@@ -7,42 +11,23 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-Write-Host "==> Installing Python dependencies, Nuitka and build tools..."
-python -m pip install -r requirements.txt nuitka zstandard ordered-set
+Write-Host "==> Installing Python dependencies and PyInstaller..."
+python -m pip install -r requirements.txt pyinstaller
 
 if ($ServerUrl) {
     Write-Host "==> Baking in server URL: $ServerUrl"
-    (Get-Content app\core\config.py) -replace 'DEFAULT_SERVER_URL = .*', "DEFAULT_SERVER_URL = `"$ServerUrl`"" | Set-Content app\core\config.py
+    # Replace only the default literal so the runtime WOODESK_SERVER_URL override keeps working.
+    (Get-Content app\core\config.py -Raw) -replace 'https://woodesk\.wp-hub\.org', $ServerUrl |
+        Set-Content app\core\config.py -NoNewline
 }
 
 # Clean existing build outputs
-if (Test-Path dist\WooDesk) {
-    Remove-Item -Recurse -Force dist\WooDesk
-}
-if (Test-Path dist\WooDesk.dist) {
-    Remove-Item -Recurse -Force dist\WooDesk.dist
-}
+if (Test-Path build) { Remove-Item -Recurse -Force build }
+if (Test-Path dist\WooDesk) { Remove-Item -Recurse -Force dist\WooDesk }
+if (Test-Path dist\WooDesk.dist) { Remove-Item -Recurse -Force dist\WooDesk.dist }
 
-Write-Host "==> Compiling native Windows binary using Nuitka (C++ MSVC)..."
-python -m nuitka `
-  --standalone `
-  --enable-plugin=pyside6 `
-  --windows-console-mode=disable `
-  --assume-yes-for-downloads `
-  --include-package=keyring `
-  --include-package=markdown `
-  --include-data-dir=app/assets=app/assets `
-  --output-dir=dist `
-  --output-folder-name=WooDesk `
-  --output-filename=WooDesk.exe `
-  --nofollow-import-to=pytest,unittest `
-  run.py
-
-# Nuitka in standalone mode creates dist\WooDesk.dist; normalize to dist\WooDesk
-if (Test-Path dist\WooDesk.dist) {
-    if (Test-Path dist\WooDesk) { Remove-Item -Recurse -Force dist\WooDesk }
-    Move-Item -Path dist\WooDesk.dist -Destination dist\WooDesk
-}
+Write-Host "==> Compiling standalone Windows build using PyInstaller..."
+python -m PyInstaller --noconfirm --clean packaging\woodesk.spec --distpath dist --workpath build
 
 Write-Host "==> Standalone app built successfully at: dist\WooDesk\WooDesk.exe"
 

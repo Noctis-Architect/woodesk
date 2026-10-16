@@ -3,18 +3,18 @@ from __future__ import annotations
 
 import html
 from typing import Any
+from urllib.parse import urlparse
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 
 def sanitize_domain(url_or_domain: str) -> str:
     """Extracts and sanitizes domain name from a URL or raw domain string."""
-    s = url_or_domain.strip().lower()
-    for prefix in ("https://", "http://"):
-        if s.startswith(prefix):
-            s = s[len(prefix):]
-    domain = s.split("/")[0].split(":")[0]
-    return domain.strip()
+    s = (url_or_domain or "").strip().lower()
+    if not s:
+        return ""
+    parsed = urlparse(s if "://" in s else f"//{s}", scheme="http")
+    return (parsed.hostname or s.split("/")[0].split(":")[0]).strip()
 
 
 def prepare_ai_payload(

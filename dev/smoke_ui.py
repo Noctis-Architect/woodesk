@@ -121,4 +121,6 @@ pp._batch(update=[{"id": pp.rows[0]["id"], "status": "draft"}]); pump(1.5)
 results["bulk_status"] = next(p for p in PRODUCTS if p["id"] == pp.rows[0]["id"])["status"] == "draft"
 
 print(results)
-os._exit(0)
+sys.stdout.flush()
+ok = all(bool(v) for v in results.values())
+os._exit(0 if ok else 1)

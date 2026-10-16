@@ -179,7 +179,8 @@ class ProductsPage(QWidget):
                 self.table.setItem(r, COL_REG, self.table.item_text(p.get("regular_price", "") if price_editable else p.get("price", ""), editable=price_editable))
                 self.table.setItem(r, COL_SALE, self.table.item_text(p.get("sale_price", "") if price_editable else "", editable=price_editable))
                 if p.get("manage_stock"):
-                    self.table.setItem(r, COL_STOCK, self.table.item_text(p.get("stock_quantity", 0), editable=True))
+                    qty = p.get("stock_quantity")
+                    self.table.setItem(r, COL_STOCK, self.table.item_text("" if qty is None else qty, editable=True))
                 else:
                     self.table.setItem(r, COL_STOCK, self.table.item_text(t({"instock": "In stock", "outofstock": "Out of stock", "onbackorder": "Backorder"}.get(p.get("stock_status"), "-"))))
                 self.table.setItem(r, COL_STATUS, self.table.item_text(t(STATUS_LABELS.get(p.get("status"), p.get("status", "")))))
@@ -344,7 +345,14 @@ class ProductsPage(QWidget):
                 if r.get("stock_quantity") not in (None, ""):
                     data["manage_stock"] = True
                     data["stock_quantity"] = int(float(r["stock_quantity"]))
-                pid = int(r["id"]) if str(r.get("id", "")).isdigit() else None
+                pid = None
+                csv_id = int(r["id"]) if str(r.get("id", "")).isdigit() else None
+                if csv_id:
+                    try:
+                        woo.product(csv_id)  # a numeric id only means "update" if the product really exists
+                        pid = csv_id
+                    except Exception:  # noqa: BLE001 - missing/deleted product -> fall through to SKU/create
+                        pid = None
                 if not pid and r.get("sku"):
                     found = woo.page("/products", {"sku": r["sku"], "per_page": 1})[0]
                     pid = found[0]["id"] if found else None

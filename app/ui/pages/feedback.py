@@ -97,6 +97,13 @@ class FeedbackPage(QWidget):
         lay.addLayout(action_row)
         lay.addStretch()
 
+    def on_show(self):
+        if not self.email_input.text().strip():
+            self.email_input.setText(cfg.ai.gmail)
+
+    def site_changed(self):
+        pass
+
     def _choose_file(self):
         path, _ = QFileDialog.getOpenFileName(
             self,

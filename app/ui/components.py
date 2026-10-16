@@ -127,7 +127,7 @@ class MediaPickerDialog(QDialog):
         items, total, pages = res
         self.grid.clear()
         for m in items:
-            it = QListWidgetItem(m.get("title", {}).get("raw") or m.get("slug", ""))
+            it = QListWidgetItem((m.get("title") or {}).get("raw") or m.get("slug", ""))
             it.setData(Qt.UserRole, m)
             self.grid.addItem(it)
             load_pixmap(media_thumb(m), lambda pm, i=it: i.setIcon(QIcon(pm)), 128)

@@ -9,8 +9,8 @@ __pycache__/
 # Distribution / packaging
 build/
 dist/
-*.spec
-*.spec.bak
+/*.spec
+/*.spec.bak
 packaging/Output/
 packaging/*.exe
 

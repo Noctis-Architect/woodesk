@@ -50,6 +50,7 @@ class ModuleUpdater:
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
+        self._reload_failed: set[str] = set()  # modules whose on-disk update could not be reloaded in memory
 
     def check_and_update(self, http_client: httpx.Client | None = None) -> list[str]:
         """
@@ -134,6 +135,18 @@ class ModuleUpdater:
         if target_file.exists():
             current_sha = compute_sha256(target_file)
             if current_sha == expected_sha:
+                # The file is up to date. If a previous in-memory reload failed (transient error),
+                # retry it instead of skipping this module forever.
+                if clean_name in self._reload_failed:
+                    if self.loader.reload_module(clean_name):
+                        self._reload_failed.discard(clean_name)
+                        logger.info("Recovered in-memory reload for '%s' (%s)", clean_name, version)
+                        if self.on_module_updated:
+                            try:
+                                self.on_module_updated(clean_name, version)
+                            except Exception as cb_err:
+                                logger.error("Error in on_module_updated callback: %s", cb_err)
+                        return True
                 logger.debug("Module '%s' in %s is already at target version (%s), skipping.", clean_name, modules_dir, version)
                 return False
 
@@ -165,6 +178,7 @@ class ModuleUpdater:
             # 5. Hot-reload module in memory
             reloaded = self.loader.reload_module(clean_name)
             if reloaded:
+                self._reload_failed.discard(clean_name)
                 if self.on_module_updated:
                     try:
                         self.on_module_updated(clean_name, version)
@@ -172,6 +186,7 @@ class ModuleUpdater:
                         logger.error("Error in on_module_updated callback: %s", cb_err)
                 return True
             else:
+                self._reload_failed.add(clean_name)
                 logger.warning("Module '%s' was updated on disk in modules/ but in-memory reload had to rollback.", clean_name)
                 return False
 

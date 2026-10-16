@@ -68,7 +68,13 @@ class WPClient(RestBase):
     def tags_by_ids(self, ids: list[int]) -> list:
         if not ids:
             return []
-        return self.json("GET", "/tags", params={"include": ",".join(str(i) for i in ids), "per_page": 100})
+        out: list = []
+        ids = list(ids)
+        # WordPress caps per_page at 100; a post may reference more tags than that.
+        for i in range(0, len(ids), 100):
+            chunk = ids[i:i + 100]
+            out.extend(self.json("GET", "/tags", params={"include": ",".join(str(x) for x in chunk), "per_page": 100}))
+        return out
 
     # ---- media ---------------------------------------------------------
     def media(self, page=1, per_page=30, search="", media_type=""):

@@ -92,11 +92,29 @@ def alt_text(name: str, lang: str) -> list[dict]:
 
 def parse_json_loose(text: str) -> dict:
     """Extract a JSON object from a model reply, tolerating ``` fences and chatter."""
-    text = re.sub(r"^```(?:json)?|```$", "", text.strip(), flags=re.M).strip()
-    m = re.search(r"\{.*\}", text, re.S)
-    if not m:
-        raise ValueError("No JSON object in AI reply")
-    return json.loads(m.group(0))
+    text = text.strip()
+    try:
+        value = json.loads(text)
+        if isinstance(value, dict):
+            return value
+    except Exception:
+        pass
+
+    text = re.sub(r"```[a-zA-Z0-9_-]*", "", text).strip()  # drop opening fences (```json ...)
+    decoder = json.JSONDecoder()
+    pos = 0
+    while True:
+        start = text.find("{", pos)
+        if start == -1:
+            break
+        try:
+            value, _end = decoder.raw_decode(text[start:])
+        except json.JSONDecodeError:
+            pos = start + 1
+            continue
+        if isinstance(value, dict):
+            return value
+    raise ValueError("No JSON object in AI reply")
 
 
 def strip_fences(text: str) -> str:

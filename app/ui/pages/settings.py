@@ -227,7 +227,7 @@ class SettingsPage(QWidget):
         self.fmt = QComboBox()
         self.fmt.addItem("OpenAI-compatible", "openai")
         self.fmt.addItem("Anthropic", "anthropic")
-        self.fmt.setCurrentIndex(self.fmt.findData(cfg.ai.api_format))
+        self.fmt.setCurrentIndex(max(0, self.fmt.findData(cfg.ai.api_format)))
         self.model = ltr(QComboBox())
         self.model.setEditable(True)
         self.model.setCurrentText(cfg.ai.model)
@@ -318,7 +318,7 @@ class SettingsPage(QWidget):
                 self.gmail_input.setFocus()
                 return False
         a.gmail = gmail_val
-        a.api_format = self.fmt.currentData()
+        a.api_format = self.fmt.currentData() or "openai"
         a.base_url = self.base_url.text().strip()
         a.model = self.model.currentText().strip()
         a.server_model = self.server_model.currentText().strip()

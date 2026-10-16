@@ -150,7 +150,7 @@ def test_default_modules_directory_and_path_traversal_rejection():
 
     # 2. Can load remote_service from dedicated modules/ directory
     mod = dynamic_manager.load_module("remote_service")
-    assert getattr(mod, "__version__") == "1.0.0"
+    assert getattr(mod, "__version__") == "1.0.1"
     payload = dynamic_manager.execute("remote_service", "prepare_ai_payload", [{"role": "user", "content": "hi"}])
     assert payload["model"] == "gpt-4o-mini"
 

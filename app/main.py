@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import sys
-from pathlib import Path
 
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QIcon, QPainter, QPixmap
@@ -13,13 +12,9 @@ from .core.config import cfg
 from .core.context import AppContext
 from .core.dynamic_loader import dynamic_manager
 from .core.module_updater import ModuleUpdater
+from .resources import branding_path, resource_dir
 from .ui.main_window import MainWindow
 from .ui.theme import apply_theme
-
-
-def resource_dir() -> Path:
-    base = getattr(sys, "_MEIPASS", None)  # PyInstaller
-    return Path(base) / "app" if base else Path(__file__).parent
 
 
 def load_font() -> str:
@@ -34,6 +29,14 @@ def load_font() -> str:
 
 
 def make_icon() -> QIcon:
+    # Brand icon: the official WooCommerce logo shipped in app/assets/branding.
+    for name in ("woodesk.ico", "woocommerce-logo-256.png", "woocommerce-logo-128.png"):
+        path = branding_path(name)
+        if path.exists():
+            icon = QIcon(str(path))
+            if not icon.isNull():
+                return icon
+
     pm = QPixmap(128, 128)
     pm.fill(Qt.transparent)
     p = QPainter(pm)

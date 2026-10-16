@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (QApplication, QComboBox, QDialog, QHBoxLayout, QL
 from .. import APP_NAME, __version__
 from ..core.config import cfg
 from ..core.i18n import t
+from ..resources import branding_path
 from .pages.ai_studio import AIStudioPage
 from .pages.dashboard import DashboardPage
 from .pages.feedback import FeedbackPage
@@ -45,7 +46,12 @@ class MainWindow(QMainWindow):
         side.setFixedWidth(210)
         sl = QVBoxLayout(side)
         sl.setContentsMargins(10, 0, 10, 12)
-        logo = QLabel("🛒 " + APP_NAME)
+        brand_logo = branding_path("woocommerce-logo-256.png")
+        if brand_logo.exists():
+            logo = QLabel(f'<img src="{brand_logo.as_posix()}" height="26" width="26"> &nbsp;{APP_NAME}')
+            logo.setTextFormat(Qt.RichText)
+        else:
+            logo = QLabel("🛒 " + APP_NAME)
         logo.setObjectName("logo")
         sl.addWidget(logo)
         self.stack = QStackedWidget()

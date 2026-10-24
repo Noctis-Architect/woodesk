@@ -3,7 +3,7 @@ from __future__ import annotations
 import html
 import webbrowser
 
-from PySide6.QtCore import QEasingCurve, QPropertyAnimation, Qt
+from PySide6.QtCore import QEasingCurve, QPropertyAnimation, QSize, Qt
 from PySide6.QtGui import QGuiApplication, QIcon, QPixmap
 from PySide6.QtWidgets import (QApplication, QButtonGroup, QComboBox, QDialog, QGraphicsOpacityEffect, QHBoxLayout,
                                QLabel, QMainWindow, QPushButton, QStackedWidget, QSystemTrayIcon, QTextBrowser,
@@ -18,9 +18,44 @@ from .pages.feedback import FeedbackPage
 from .pages.media import MediaPage
 from .pages.posts import PostsPage
 from .pages.products import ProductsPage
+from .pages.seo import SeoPage
 from .pages.settings import SettingsPage
-from .theme import apply_theme, resolve_theme
-from .widgets import button, set_main_window
+from .theme import apply_theme, palette, resolve_theme
+from .widgets import button, label, set_main_window, svg_icon
+
+
+class PageStack(QStackedWidget):
+    def __init__(self):
+        super().__init__()
+        self._animation = None
+        self._animated_page = None
+
+    def show_page(self, page: QWidget) -> None:
+        if self.currentWidget() is page:
+            return
+        self._finish_transition()
+        self.setCurrentWidget(page)
+        if not self.isVisible():
+            return
+        effect = QGraphicsOpacityEffect(page)
+        page.setGraphicsEffect(effect)
+        self._animated_page = page
+        self._animation = QPropertyAnimation(effect, b"opacity", self)
+        self._animation.setDuration(190)
+        self._animation.setEasingCurve(QEasingCurve.OutCubic)
+        self._animation.setStartValue(0.2)
+        self._animation.setEndValue(1.0)
+        self._animation.finished.connect(self._finish_transition)
+        self._animation.start()
+
+    def _finish_transition(self) -> None:
+        if self._animation:
+            self._animation.stop()
+            self._animation.deleteLater()
+            self._animation = None
+        if self._animated_page:
+            self._animated_page.setGraphicsEffect(None)
+            self._animated_page = None
 
 
 class MainWindow(QMainWindow):
@@ -42,15 +77,16 @@ class MainWindow(QMainWindow):
         # ---- sidebar
         side = QWidget()
         side.setObjectName("sidebar")
-        side.setFixedWidth(210)
+        side.setFixedWidth(224)
         sl = QVBoxLayout(side)
-        sl.setContentsMargins(10, 0, 10, 12)
+        sl.setContentsMargins(14, 0, 14, 16)
+        sl.setSpacing(6)
         brand_logo = branding_path("woocommerce-logo-256.png")
         brand = QWidget()
         brand.setObjectName("brand")
         bl = QHBoxLayout(brand)
-        bl.setContentsMargins(12, 16, 12, 10)
-        bl.setSpacing(10)
+        bl.setContentsMargins(10, 20, 10, 16)
+        bl.setSpacing(12)
         if brand_logo.exists():
             ic = QLabel()
             ic.setPixmap(QPixmap(str(brand_logo)).scaled(32, 32, Qt.KeepAspectRatio, Qt.SmoothTransformation))
@@ -66,7 +102,7 @@ class MainWindow(QMainWindow):
         bl.addLayout(names)
         bl.addStretch()
         sl.addWidget(brand)
-        self.stack = QStackedWidget()
+        self.stack = PageStack()
         self.pages: dict[str, QWidget] = {}
         self.group = QButtonGroup(self)
         self.group.setExclusive(True)
@@ -75,17 +111,19 @@ class MainWindow(QMainWindow):
         self.pages["products"] = ProductsPage(ctx)
         self.pages["posts"] = PostsPage(ctx)
         self.pages["media"] = MediaPage(ctx)
+        self.pages["seo"] = SeoPage(ctx)
         self.pages["feedback"] = FeedbackPage(ctx)
         self.pages["settings"] = SettingsPage(ctx, self.apply_theme)
-        for key, icon_, text in [("dashboard", "🏠", "Dashboard"), ("products", "📦", "Products"), ("posts", "📝", "Posts"),
-                                 ("media", "🖼", "Media"), ("feedback", "💬", "Feedback"), ("settings", "⚙", "Settings")]:
+        for key, text in [("dashboard", "Dashboard"), ("products", "Products"), ("posts", "Posts"),
+                          ("media", "Media"), ("seo", "SEO"), ("feedback", "Feedback"), ("settings", "Settings")]:
             if key == "feedback":
                 sl.addStretch()
-            b = QPushButton(f"{icon_}  {t(text)}")
+            b = QPushButton(t(text))
             b.setObjectName("nav")
+            b.setIcon(svg_icon(f"nav-{key}", "#d7dbec", 20))
+            b.setIconSize(QSize(20, 20))
             b.setCheckable(True)
             b.setCursor(Qt.PointingHandCursor)
-            b.setStyleSheet("text-align: %s;" % ("right" if cfg.language == "fa" else "left"))
             b.clicked.connect(lambda _=False, k=key: self.goto(k))
             self.group.addButton(b)
             self.nav[key] = b
@@ -98,20 +136,24 @@ class MainWindow(QMainWindow):
         right.setSpacing(0)
         top = QWidget()
         top.setObjectName("topbar")
-        top.setFixedHeight(56)
+        top.setFixedHeight(64)
         tl = QHBoxLayout(top)
-        tl.setContentsMargins(20, 0, 20, 0)
-        tl.addWidget(QLabel(t("Site") + ":"))
+        tl.setContentsMargins(24, 0, 24, 0)
+        tl.setSpacing(10)
+        tl.addWidget(label(t("Site") + ":", muted=True))
         self.site_combo = QComboBox()
-        self.site_combo.setMinimumWidth(260)
+        self.site_combo.setMinimumWidth(280)
         self.site_combo.currentIndexChanged.connect(self._site_picked)
         tl.addWidget(self.site_combo)
         tl.addStretch()
         self.theme_btn = QToolButton()
+        self.theme_btn.setIconSize(QSize(20, 20))
         self.theme_btn.setCursor(Qt.PointingHandCursor)
         self.theme_btn.clicked.connect(self.toggle_theme)
         tl.addWidget(self.theme_btn)
         self.bell = QToolButton()
+        self.bell.setIconSize(QSize(20, 20))
+        self.bell.setCursor(Qt.PointingHandCursor)
         self.bell.clicked.connect(self.show_announcements)
         tl.addWidget(self.bell)
         right.addWidget(top)
@@ -141,24 +183,10 @@ class MainWindow(QMainWindow):
     def goto(self, key: str, action: str | None = None) -> None:
         self.nav[key].setChecked(True)
         page = self.pages[key]
-        self.stack.setCurrentWidget(page)
-        self._fade(page)
+        self.stack.show_page(page)
         page.on_show()
         if action == "new":
             (page.new_product if key == "products" else page.new_post)()
-
-    def _fade(self, page: QWidget) -> None:
-        """A short, subtle fade-in when switching pages."""
-        effect = QGraphicsOpacityEffect(page)
-        page.setGraphicsEffect(effect)
-        anim = QPropertyAnimation(effect, b"opacity", self)
-        anim.setDuration(150)
-        anim.setStartValue(0.0)
-        anim.setEndValue(1.0)
-        anim.setEasingCurve(QEasingCurve.OutCubic)
-        anim.finished.connect(lambda p=page: p.setGraphicsEffect(None))
-        self._fade_anim = anim
-        anim.start()
 
     # ---- sites
     def _fill_sites(self) -> None:
@@ -195,14 +223,16 @@ class MainWindow(QMainWindow):
         self.apply_theme()
 
     def _update_theme_btn(self) -> None:
+        p = palette(cfg.theme)
         dark = resolve_theme(cfg.theme) == "dark"
-        self.theme_btn.setText("☀" if dark else "🌙")
+        self.theme_btn.setIcon(svg_icon("sun" if dark else "moon", p["muted"]))
         self.theme_btn.setToolTip(t("Switch to light theme") if dark else t("Switch to dark theme"))
+        self.bell.setIcon(svg_icon("bell", p["muted"]))
 
     # ---- announcements
     def _update_bell(self) -> None:
         n = len(self.ctx.unseen_announcements())
-        self.bell.setText("🔔" + (f" {n}" if n else ""))
+        self.bell.setText(str(n) if n else "")
         self.bell.setToolTip(t("Announcements"))
 
     def show_announcements(self) -> None:
@@ -210,15 +240,17 @@ class MainWindow(QMainWindow):
         dlg.setWindowTitle(t("Announcements"))
         dlg.resize(520, 420)
         lay = QVBoxLayout(dlg)
+        lay.setContentsMargins(16, 16, 16, 16)
         view = QTextBrowser()
         view.setOpenExternalLinks(True)
         if self.ctx.announcements:
-            view.setHtml("<hr>".join(
+            body = "<hr>".join(
                 f"<h3>{html.escape(a['title'])}</h3><p>{html.escape(a.get('body', ''))}</p>"
                 + (f'<p><a href="{html.escape(a["url"])}">{html.escape(a["url"])}</a></p>' if a.get("url") else "")
-                for a in self.ctx.announcements))
+                for a in self.ctx.announcements)
         else:
-            view.setHtml(f"<p>{t('No announcements')}</p>")
+            body = f"<p>{t('No announcements')}</p>"
+        view.setHtml(f'<div dir="rtl">{body}</div>' if cfg.language == "fa" else body)
         lay.addWidget(view)
         lay.addWidget(button(t("Close"), slot=dlg.accept))
         dlg.exec()
@@ -238,15 +270,17 @@ class MainWindow(QMainWindow):
         lay.setContentsMargins(20, 20, 20, 20)
         lay.setSpacing(12)
 
-        icon_str = "🚨 " if a.get("level") == "urgent" else "📢 "
-        title_lbl = QLabel(icon_str + html.escape(a.get("title", "")))
+        title_lbl = label(html.escape(a.get("title", "")))
         title_lbl.setStyleSheet("font-size: 16px; font-weight: bold;")
         title_lbl.setWordWrap(True)
         lay.addWidget(title_lbl)
 
         view = QTextBrowser()
         view.setOpenExternalLinks(True)
-        view.setHtml(f"<div style='font-size:14px; line-height:1.6;'>{html.escape(a.get('body', '')).replace(chr(10), '<br>')}</div>")
+        body = html.escape(a.get("body", "")).replace(chr(10), "<br>")
+        view.setHtml(f"<div dir='rtl' style='font-size:14px; line-height:1.6;'>{body}</div>"
+                     if cfg.language == "fa" else
+                     f"<div style='font-size:14px; line-height:1.6;'>{body}</div>")
         lay.addWidget(view, 1)
 
         btn_row = QHBoxLayout()

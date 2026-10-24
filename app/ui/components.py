@@ -48,7 +48,8 @@ class TaxonomyPicker(QWidget):
 
         def walk(parent: int, depth: int):
             for c in sorted(by_parent.get(parent, []), key=lambda x: x["name"]):
-                it = QListWidgetItem(("— " * depth) + c["name"].replace("&amp;", "&"))
+                indent = "\u00a0\u00a0\u00a0\u00a0" * depth
+                it = QListWidgetItem(indent + c["name"].replace("&amp;", "&"))
                 it.setData(Qt.UserRole, c["id"])
                 it.setFlags(it.flags() | Qt.ItemIsUserCheckable)
                 it.setCheckState(Qt.Checked if c["id"] in self._checked else Qt.Unchecked)

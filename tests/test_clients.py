@@ -21,7 +21,9 @@ import httpx  # noqa: E402
 import pytest  # noqa: E402
 
 from app.ai import prompts  # noqa: E402
-from app.ai.client import AnthropicClient, OpenAICompatClient, QuotaExceeded  # noqa: E402
+from app.ai.catalog import AICatalog, CatalogError, catalog, validate_remote  # noqa: E402
+from app.ai.client import QuotaExceeded  # noqa: E402
+from app.ai.provider import DynamicProviderClient  # noqa: E402
 from app.api.http import ApiError, domain_of, normalize_url  # noqa: E402
 from app.api.server import ServerClient  # noqa: E402
 from app.api.woo import WooClient, combo_key, variation_combos  # noqa: E402
@@ -105,30 +107,137 @@ def test_adjust_price():
     assert adjust_price("", pct=5) == ""
 
 
-def test_openai_compat_and_models():
-    def h(req):
-        if req.url.path.endswith("/chat/completions"):
-            body = json.loads(req.content)
-            assert body["model"] == "m1" and req.headers["authorization"] == "Bearer KEY"
-            return httpx.Response(200, json={"choices": [{"message": {"content": " hi "}}], "usage": {"total_tokens": 5}})
-        return httpx.Response(200, json={"data": [{"id": "b"}, {"id": "a"}]})
+def test_config_save_is_safe_when_called_concurrently(tmp_path, monkeypatch):
+    monkeypatch.setenv("WOODESK_HOME", str(tmp_path))
+    config = Config(language="fa", theme="dark")
+    errors = []
 
-    c = OpenAICompatClient("https://api.x.com/v1/chat/completions", "KEY", "m1", client_with(h))
-    r = c.chat([{"role": "user", "content": "x"}])
+    def save():
+        try:
+            config.save()
+        except Exception as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=save) for _ in range(12)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert not errors
+    assert json.loads(config.path.read_text(encoding="utf-8"))["theme"] == "dark"
+
+
+def test_dynamic_provider_request_headers_response_and_models():
+    def h(req):
+        if req.url.path == "/v1/ask":
+            body = json.loads(req.content)
+            assert body == {"engine": "m1", "input": [{"role": "user", "content": "x"}], "limit": 7}
+            assert req.headers["x-api-key"] == "Token KEY"
+            assert req.url.params["key"] == "KEY" and req.url.params["api-version"] == "2026-01-01"
+            return httpx.Response(200, json={"result": [{"output": " hi "}], "meta": {"total_tokens": 5}})
+        assert req.url.path == "/v1/catalog"
+        assert req.url.params["key"] == "KEY"
+        return httpx.Response(200, json={"payload": {"items": [{"slug": "b"}, {"slug": "models/a"}]}})
+
+    profile = validate_remote({
+        "schema_version": 1,
+        "version": "test",
+        "providers": [{
+            "id": "custom-test", "label": "Custom Test", "base_url": "https://api.x.com/v1",
+            "auth": {"header": "X-API-Key", "prefix": "Token ", "query_param": "key", "required": True},
+            "headers": {"Content-Type": "application/json"},
+            "chat": {
+                "method": "POST", "path": "/ask", "query": {"api-version": "2026-01-01"},
+                "body": {"engine": "{model}", "input": "{messages}", "limit": "{max_tokens}"},
+            },
+            "response": {"text": "result.0.output", "usage": "meta"},
+            "models": {"path": "/catalog", "list": "payload.items", "id": "slug"},
+        }],
+    })["providers"][0]
+    c = DynamicProviderClient(profile, profile["base_url"], "KEY", "m1", client_with(h))
+    r = c.chat([{"role": "user", "content": "x"}], max_tokens=7)
     assert r.text == "hi" and r.usage["total_tokens"] == 5
     assert c.list_models() == ["a", "b"]
 
 
-def test_anthropic_client_splits_system():
+def test_anthropic_catalog_profile_splits_system():
     def h(req):
         body = json.loads(req.content)
         assert body["system"] == "sys" and body["messages"] == [{"role": "user", "content": "q"}]
-        assert req.headers["x-api-key"] == "K"
+        assert req.headers["x-api-key"] == "K" and req.headers["anthropic-version"] == "2023-06-01"
         return httpx.Response(200, json={"content": [{"type": "text", "text": "ok"}], "usage": {"input_tokens": 2, "output_tokens": 3}})
 
-    c = AnthropicClient("https://api.anthropic.com", "K", "claude", client_with(h))
+    profile = catalog.provider("anthropic")
+    c = DynamicProviderClient(profile, profile["base_url"], "K", "claude", client_with(h))
     r = c.chat([{"role": "system", "content": "sys"}, {"role": "user", "content": "q"}])
-    assert r.text == "ok" and r.usage["total_tokens"] == 5
+    assert r.text == "ok" and r.usage["input_tokens"] == 2
+
+
+def test_remote_catalog_overrides_prompts_and_rejects_unknown_variables():
+    original = catalog.snapshot()
+    try:
+        catalog.apply_remote({
+            "schema_version": 1,
+            "version": "remote-test",
+            "providers": [],
+            "languages": {"fa": "Persian custom"},
+            "prompts": {"translate": {"user": "Translate into {language}.\n{text}"}},
+        }, persist=False)
+        messages = prompts.translate("hello", "fa")
+        assert "Persian custom" in messages[-1]["content"]
+        assert "{text}" not in messages[-1]["content"] and "hello" in messages[-1]["content"]
+        with pytest.raises(CatalogError):
+            catalog.apply_remote({
+                "schema_version": 1,
+                "providers": [],
+                "prompts": {"translate": {"user": "Use {unsupported_variable}"}},
+            }, persist=False)
+    finally:
+        catalog.apply_remote({
+            "schema_version": 1, "version": original["version"],
+            "providers": [], "prompts": {}, "languages": {},
+        }, persist=False)
+        catalog.reset_remote()
+
+
+def test_remote_catalog_is_cached_for_offline_use(tmp_path, monkeypatch):
+    monkeypatch.setenv("WOODESK_HOME", str(tmp_path))
+    payload = {
+        "schema_version": 1,
+        "version": "offline-cache-1",
+        "providers": [],
+        "languages": {"xx": "Test language"},
+        "prompts": {"alt_text": {"user": "Alt text for {name} in {language}"}},
+    }
+    first = AICatalog()
+    first.apply_remote(payload)
+
+    second = AICatalog()
+    assert second.version() == "offline-cache-1"
+    assert second.language("xx") == "Test language"
+    assert "Alt text for" in second.prompt("alt_text")["user"]
+    second.reset_remote()
+
+
+def test_every_builtin_prompt_renders_from_catalog():
+    rendered = [
+        prompts.product_description("Chair", "fa", context="SKU 1"),
+        prompts.product_short("Chair", "fa", description="A chair"),
+        prompts.seo_meta("Chair", "fa", content="Body", keyword="chair"),
+        prompts.rewrite("Text", "fa"),
+        prompts.translate("Text", "en"),
+        prompts.post_outline("Topic", "fa"),
+        prompts.post_draft("Topic", "fa"),
+        prompts.excerpt("Article", "fa"),
+        prompts.suggest_tags("Article", "fa"),
+        prompts.alt_text("Chair", "fa"),
+        prompts.seo_audit({"score": 80}, "fa"),
+        prompts.perf_analysis({"score": 90}, "fa"),
+    ]
+    for messages in rendered:
+        assert [message["role"] for message in messages] == ["system", "user"]
+        assert messages[-1]["content"].strip()
 
 
 def test_prompts_json_parsing():
@@ -144,6 +253,8 @@ def test_config_roundtrip_and_unknown_keys():
     c.add_site(Site(id="a", name="A", url="https://a.com", wp_user="u"))
     c.ai.model = "gpt"
     c.telemetry = False
+    c.notifications.new_orders = True
+    c.notifications.interval_seconds = 120
     c.save()
     raw = json.loads(c.path.read_text())
     raw["future_key"] = 1
@@ -151,6 +262,7 @@ def test_config_roundtrip_and_unknown_keys():
     c.path.write_text(json.dumps(raw))
     c2 = Config.load()
     assert c2.sites[0].id == "a" and c2.ai.model == "gpt" and c2.telemetry is False and c2.active_site == "a"
+    assert c2.notifications.new_orders is True and c2.notifications.interval_seconds == 120
 
 
 def test_server_client_mock():

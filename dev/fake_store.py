@@ -5,7 +5,9 @@ endpoint) for developing and testing WooDesk without a real shop.
 """
 from __future__ import annotations
 
+import asyncio
 import itertools
+import json
 import struct
 import zlib
 from datetime import datetime
@@ -81,6 +83,74 @@ def paged(items: list, request: Request, resp: Response):
     resp.headers["X-WP-Total"] = str(len(items))
     resp.headers["X-WP-TotalPages"] = str(max(1, -(-len(items) // per)))
     return items[(page - 1) * per: page * per]
+
+
+# --------------------------------------------------------------- pages ---
+@app.get("/")
+def home():
+    return Response("""<!doctype html><html lang="en"><head><meta charset="utf-8">
+<title>Demo WooCommerce store</title><meta name="description" content="A small demo store used by WooDesk tests and screenshots.">
+<meta name="viewport" content="width=device-width, initial-scale=1"><link rel="canonical" href="http://127.0.0.1:8099/">
+</head><body><h1>Demo store</h1><p>This is the fake store used by the development smoke tests.</p>
+<a href="/seo-demo">SEO demo</a> <a href="/perf-demo">Performance demo</a> <a href="/wp-json/wp/v2/posts">Posts API</a>
+</body></html>""", media_type="text/html")
+
+
+@app.get("/robots.txt")
+def robots():
+    return Response("User-agent: *\nAllow: /\nSitemap: http://127.0.0.1:8099/sitemap.xml\n", media_type="text/plain")
+
+
+@app.get("/sitemap.xml")
+def sitemap():
+    return Response("""<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+<url><loc>http://127.0.0.1:8099/</loc></url>
+<url><loc>http://127.0.0.1:8099/seo-demo</loc></url>
+<url><loc>http://127.0.0.1:8099/perf-demo</loc></url>
+</urlset>""", media_type="application/xml")
+
+
+@app.get("/seo-demo")
+def seo_demo():
+    words = ("A useful guide for WooCommerce store owners who want to improve product pages, "
+             "write clear descriptions and keep their catalog healthy. ") * 14
+    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
+<title>WooCommerce catalog guide for small stores</title>
+<meta name="description" content="A practical guide to building a healthy WooCommerce catalog with useful product pages and clear technical settings.">
+<meta name="viewport" content="width=device-width, initial-scale=1"><link rel="canonical" href="http://127.0.0.1:8099/seo-demo">
+<meta property="og:title" content="WooCommerce catalog guide"><meta property="og:description" content="A practical catalog guide.">
+<meta property="og:image" content="http://127.0.0.1:8099/perf-asset.png">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="WooCommerce catalog guide">
+<meta name="twitter:description" content="A practical catalog guide.">
+<script type="application/ld+json">{{"@context":"https://schema.org","@type":"Product","name":"Guide","offers":{{"@type":"Offer","price":"10","priceCurrency":"USD"}}}}</script>
+</head><body><h1>WooCommerce catalog guide</h1><p>{words}</p>
+<img src="/perf-asset.png" alt="guide cover" width="640" height="480" loading="lazy">
+<img src="/perf-asset.png" width="640" height="480" loading="lazy">
+<a href="/">Home</a><a href="/perf-demo">Performance</a><a href="/seo-demo">Guide</a>
+</body></html>""", media_type="text/html")
+
+
+@app.get("/perf-demo")
+def perf_demo():
+    return Response("""<!doctype html><html lang="en"><head><meta charset="utf-8">
+<title>Performance demo</title><meta name="description" content="A page with a delayed image, a layout shift and a long task for local Core Web Vitals tests.">
+<meta name="viewport" content="width=device-width, initial-scale=1"><link rel="canonical" href="http://127.0.0.1:8099/perf-demo">
+<style>body{font-family:sans-serif;margin:0;padding:20px}#hero{display:block;width:100%;max-width:900px;height:340px;object-fit:cover}
+#late{height:170px;background:#ffeaa7;display:flex;align-items:center;justify-content:center;font-size:24px}</style>
+</head><body><h1>Performance demo</h1><img id="hero" src="/perf-asset.png" width="900" height="340" alt="hero">
+<p>This page intentionally delays its image and shifts content.</p>
+<script>
+setTimeout(() => { const e=performance.now()+320; while(performance.now()<e){} }, 500);
+setTimeout(() => { const d=document.createElement('div'); d.id='late'; d.textContent='Late content shifts the layout';
+  document.body.insertBefore(d, document.body.querySelector('h1').nextSibling); }, 900);
+</script></body></html>""", media_type="text/html")
+
+
+@app.get("/perf-asset.png")
+async def perf_asset():
+    await asyncio.sleep(0.55)
+    return Response(png((50, 120, 200), 900), media_type="image/png")
 
 
 # ------------------------------------------------------------------ WP ---
@@ -300,7 +370,26 @@ async def variations_batch(pid: int, request: Request):
 async def chat(request: Request):
     d = await request.json()
     prompt = d["messages"][-1]["content"]
-    if "Return ONLY a JSON object" in prompt:
+    system = d["messages"][0]["content"] if d.get("messages") else ""
+    if "web performance engineer" in system:
+        text = json.dumps({
+            "summary": "The page is light but the main thread has a long task.",
+            "priorities": [
+                {"issue": "TBT", "impact": "Interaction delay", "action": "Split the long JavaScript task."},
+            ],
+            "quick_wins": ["Compress the HTML response", "Reduce long tasks"],
+        })
+    elif "senior technical SEO auditor" in system or "SEO audit" in prompt:
+        text = json.dumps({
+            "summary": "The page has a clear topic but needs technical and meta improvements.",
+            "priorities": [
+                {"issue": "HTTPS", "impact": "Trust and ranking", "action": "Serve the page over HTTPS."},
+                {"issue": "Meta description", "impact": "Snippet quality", "action": "Write a 70-155 character description."},
+            ],
+            "quick_wins": ["Add a canonical URL", "Add Open Graph tags"],
+            "suggested_meta": {"title": "Demo page title", "description": "A useful demo meta description for this page."},
+        })
+    elif "Return ONLY a JSON object" in prompt:
         text = '{"title": "Great title", "description": "A fine meta description.", "slug": "great-title", "focus_keyword": "kw"}'
     elif "comma-separated" in prompt:
         text = "alpha, beta, gamma"

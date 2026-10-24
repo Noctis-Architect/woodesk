@@ -8,6 +8,7 @@ from unittest.mock import MagicMock
 
 import httpx
 import pytest
+from PySide6.QtCore import QLockFile
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -141,6 +142,25 @@ def test_module_updater_rejects_mismatched_sha(tmp_path):
     assert not list(tmp_path.glob("*.tmp*"))  # Temporary files must be cleaned up
 
 
+def test_module_updater_respects_cross_process_lock(tmp_path):
+    mgr = DynamicModuleManager(modules_dir=tmp_path)
+    lock = QLockFile(str(tmp_path / ".woodesk-update.lock"))
+    assert lock.tryLock(100)
+    try:
+        updater = ModuleUpdater("http://mock-server/manifest.json", loader=mgr)
+        called = []
+
+        def transport(request):
+            called.append(request)
+            return httpx.Response(500)
+
+        client = httpx.Client(transport=httpx.MockTransport(transport))
+        assert updater.check_and_update(http_client=client) == []
+        assert called == []
+    finally:
+        lock.unlock()
+
+
 def test_default_modules_directory_and_path_traversal_rejection():
     from app.core.dynamic_loader import dynamic_manager, validate_module_name
 
@@ -150,7 +170,7 @@ def test_default_modules_directory_and_path_traversal_rejection():
 
     # 2. Can load remote_service from dedicated modules/ directory
     mod = dynamic_manager.load_module("remote_service")
-    assert getattr(mod, "__version__") == "1.0.1"
+    assert getattr(mod, "__version__") == "1.2.0"
     payload = dynamic_manager.execute("remote_service", "prepare_ai_payload", [{"role": "user", "content": "hi"}])
     assert payload["model"] == "gpt-4o-mini"
 
@@ -163,4 +183,42 @@ def test_default_modules_directory_and_path_traversal_rejection():
 
     with pytest.raises(ValueError):
         dynamic_manager.load_module("sub/dir")
+
+
+def test_server_logic_uses_dynamic_module_and_falls_back():
+    from app.api import server_logic
+    from app.core import dynamic_loader
+
+    # 1. Dynamic module supplies the server-facing logic
+    assert server_logic.call("endpoint", "ai_chat") == "/v1/ai/chat"
+    req = server_logic.call("ai_chat_request", [{"role": "user", "content": "hi"}], 0.3, 50, "m1", "x@gmail.com")
+    assert req["path"] == "/v1/ai/chat"
+    assert req["json"]["model"] == "m1"
+    assert req["json"]["gmail"] == "x@gmail.com"
+    assert req["json"]["temperature"] == 0.3
+    assert server_logic.call("server_headers", "tok", "A@B.com")["X-User-Gmail"] == "a@b.com"
+
+    # 2. If the dynamic module is unavailable or raises, the built-in fallback is used
+    class _Broken:
+        def endpoint(self, name):
+            raise RuntimeError("boom")
+
+    orig = dynamic_loader.dynamic_manager.get_service
+    try:
+        dynamic_loader.dynamic_manager.get_service = lambda name: None
+        assert server_logic.call("endpoint", "config") == "/v1/config"
+        dynamic_loader.dynamic_manager.get_service = lambda name: _Broken()
+        assert server_logic.call("endpoint", "quota") == "/v1/quota"
+    finally:
+        dynamic_loader.dynamic_manager.get_service = orig
+
+
+def test_telemetry_policy_is_dynamic():
+    from app.api import server_logic
+
+    assert server_logic.call("should_send_telemetry", False, 0, 10 ** 9, 100) is False
+    assert server_logic.call("should_send_telemetry", True, 0, 100, 72000) is False
+    assert server_logic.call("should_send_telemetry", True, 0, 72001, 72000) is True
+    payload = server_logic.call("build_telemetry_payload", "1.0.0", "Linux", "fa", ["https://Shop.Example.com/x"])
+    assert payload["sites"] == ["shop.example.com"]
 

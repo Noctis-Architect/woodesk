@@ -3,7 +3,7 @@ from __future__ import annotations
 import html
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QCheckBox, QDialog, QHBoxLayout, QLabel, QProgressBar, QVBoxLayout
+from PySide6.QtWidgets import QCheckBox, QDialog, QHBoxLayout, QHeaderView, QLabel, QProgressBar, QVBoxLayout
 
 from ...ai import prompts
 from ...core.config import cfg
@@ -40,9 +40,9 @@ class BulkAIDialog(QDialog):
         self.bar.setMaximum(len(products))
         lay.addWidget(self.bar)
         self.table = DataTable([t("Product"), t("New short description"), t("New description")])
-        self.table.setColumnWidth(1, 200)
-        self.table.setColumnWidth(2, 260)
-        self.table.setColumnWidth(3, 340)
+        self.table.setColumnWidth(1, 190)
+        self.table.setColumnWidth(2, 220)
+        self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)
         lay.addWidget(self.table)
         row = QHBoxLayout()
         self.start = button(t("Start"), primary=True, slot=self.run)

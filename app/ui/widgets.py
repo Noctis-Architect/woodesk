@@ -6,20 +6,36 @@ from collections import OrderedDict
 from contextlib import contextmanager
 
 import httpx
-from PySide6.QtCore import QBuffer, QIODevice, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QIcon, QImage, QImageReader, QPixmap
-from PySide6.QtWidgets import (QFrame, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox,
-                               QPlainTextEdit, QPushButton, QTableWidget, QTableWidgetItem, QTextBrowser,
-                               QToolButton, QVBoxLayout, QWidget, QAbstractItemView)
+from PySide6.QtCore import (QBuffer, QEasingCurve, QEvent, QIODevice, QPoint, QPropertyAnimation, QSize, Qt,
+                            QTimer, Signal)
+from PySide6.QtGui import QColor, QIcon, QImage, QImageReader, QPainter, QPixmap
+from PySide6.QtWidgets import (QAbstractItemView, QApplication, QDialog, QFrame, QGraphicsOpacityEffect,
+                               QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox, QPlainTextEdit,
+                               QPushButton, QTableWidget, QTableWidgetItem, QTextBrowser, QToolButton,
+                               QVBoxLayout, QWidget)
 
 from .. import __version__
 from ..core.config import cfg, data_dir
 from ..core.i18n import t
 from ..core.workers import run_async
+from ..resources import asset_path
 from .theme import palette, preview_css
+
+
+def svg_icon(name: str, color: str, size: int = 20) -> QIcon:
+    source = QIcon(str(asset_path("icons", f"{name}.svg")))
+    pm = QPixmap(size * 2, size * 2)
+    pm.fill(Qt.transparent)
+    painter = QPainter(pm)
+    source.paint(painter, 0, 0, pm.width(), pm.height())
+    painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
+    painter.fillRect(pm.rect(), QColor(color))
+    painter.end()
+    return QIcon(pm)
 
 # ---------------------------------------------------------------- toast ---
 _main_window = None
+_toasts: dict[QWidget, list["Toast"]] = {}
 
 
 def set_main_window(w) -> None:
@@ -27,21 +43,190 @@ def set_main_window(w) -> None:
     _main_window = w
 
 
-def notify(text: str, kind: str = "info", ms: int = 3500) -> None:
-    w = _main_window
-    if w is None:
+def _toast_color(kind: str) -> str:
+    p = palette(cfg.theme)
+    return {"info": p["primary_bg"], "ok": p["success"], "error": p["danger"],
+            "warn": p["warning"]}.get(kind, p["primary_bg"])
+
+
+class Toast(QFrame):
+    """A single animated notification. Toasts are stacked bottom-up and never overlap."""
+
+    def __init__(self, window: QWidget, text: str, kind: str):
+        super().__init__(window)
+        self._window = window
+        self._text = str(text)
+        self._closing = False
+        self.setObjectName("toast")
+        self.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.setStyleSheet(f"QFrame#toast {{ background: {_toast_color(kind)}; }}")
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(16, 10, 16, 10)
+        self.label = QLabel(self._text)
+        self.label.setObjectName("toastText")
+        self.label.setTextFormat(Qt.PlainText)
+        self.label.setWordWrap(True)
+        self.label.setAlignment(Qt.AlignCenter)
+        lay.addWidget(self.label)
+        self.effect = QGraphicsOpacityEffect(self)
+        self.setGraphicsEffect(self.effect)
+        self.timer = QTimer(self)
+        self.timer.setSingleShot(True)
+        self.timer.timeout.connect(self.dismiss)
+        self._pos_anim: QPropertyAnimation | None = None
+        self._fade_anim: QPropertyAnimation | None = None
+        self._slide_anim: QPropertyAnimation | None = None
+        self._size_for(self._max_width())
+        window.installEventFilter(self)
+
+    def _max_width(self) -> int:
+        return max(220, min(560, self._window.width() - 56))
+
+    def _size_for(self, max_w: int) -> None:
+        self.label.ensurePolished()
+        fm = self.label.fontMetrics()
+        width = min(max_w, max(240, fm.horizontalAdvance(self._text) + 36))
+        text_w = width - 32
+        self.label.setFixedWidth(text_w)
+        height = max(self.label.heightForWidth(text_w), fm.height())
+        self.setFixedSize(width, max(42, height + 20))
+
+    def move_to(self, x: int, y: int, animate: bool = True) -> None:
+        target = QPoint(x, y)
+        if not animate or self.pos() == target or not self.isVisible():
+            if self._pos_anim:
+                self._pos_anim.stop()
+            self.move(target)
+            return
+        if self._pos_anim:
+            self._pos_anim.stop()
+        anim = QPropertyAnimation(self, b"pos", self)
+        anim.setDuration(160)
+        anim.setEasingCurve(QEasingCurve.OutCubic)
+        anim.setStartValue(self.pos())
+        anim.setEndValue(target)
+        anim.start()
+        self._pos_anim = anim
+
+    def enter(self) -> None:
+        self.effect.setOpacity(0.0)
+        fade = QPropertyAnimation(self.effect, b"opacity", self)
+        fade.setDuration(170)
+        fade.setEasingCurve(QEasingCurve.OutCubic)
+        fade.setStartValue(0.0)
+        fade.setEndValue(1.0)
+        fade.start()
+        self._fade_anim = fade
+        target = self.pos()
+        self.move(target + QPoint(0, 10))
+        slide = QPropertyAnimation(self, b"pos", self)
+        slide.setDuration(190)
+        slide.setEasingCurve(QEasingCurve.OutCubic)
+        slide.setStartValue(target + QPoint(0, 10))
+        slide.setEndValue(target)
+        slide.start()
+        self._slide_anim = slide
+
+    def dismiss(self, instant: bool = False) -> None:
+        if self._closing:
+            return
+        self._closing = True
+        self.timer.stop()
+        if instant:
+            self._finish()
+            return
+        fade = QPropertyAnimation(self.effect, b"opacity", self)
+        fade.setDuration(160)
+        fade.setEasingCurve(QEasingCurve.InCubic)
+        fade.setStartValue(self.effect.opacity())
+        fade.setEndValue(0.0)
+        fade.finished.connect(self._finish)
+        fade.start()
+        self._fade_anim = fade
+
+    def reparent(self, window: QWidget) -> None:
+        if self._closing:
+            return
+        for anim in (self._pos_anim, self._fade_anim, self._slide_anim):
+            if anim:
+                anim.stop()
+        self._window.removeEventFilter(self)
+        self.setParent(window)
+        self._window = window
+        window.installEventFilter(self)
+        self.effect.setOpacity(1.0)
+        self.show()
+        self.raise_()
+
+    def _finish(self) -> None:
+        items = _toasts.get(self._window)
+        if items and self in items:
+            items.remove(self)
+            if not items:
+                _toasts.pop(self._window, None)
+            else:
+                _relayout(self._window, animate=True)
+        self.hide()
+        self.deleteLater()
+
+    def eventFilter(self, obj, event):
+        if obj is self._window and event.type() == QEvent.Resize and not self._closing:
+            _relayout(self._window, animate=False)
+        return False
+
+
+def _relayout(window: QWidget, animate: bool = True, new: "Toast | None" = None) -> None:
+    toasts = [t for t in _toasts.get(window, []) if not t._closing]
+    if not toasts:
         return
-    colors = {"info": "#4b5563", "ok": "#2fa36b", "error": "#e5484d", "warn": "#d9822b"}
-    lbl = QLabel(text, w)
-    lbl.setObjectName("toast")
-    lbl.setStyleSheet(f"background:{colors.get(kind, colors['info'])};")
-    lbl.setWordWrap(True)
-    lbl.setMaximumWidth(max(300, w.width() - 80))
-    lbl.adjustSize()
-    lbl.move((w.width() - lbl.width()) // 2, w.height() - lbl.height() - 28)
-    lbl.show()
-    lbl.raise_()
-    QTimer.singleShot(ms, lbl.deleteLater)
+    max_w = max(220, min(560, window.width() - 56))
+    bottom = window.height() - 24
+    for toast in reversed(toasts):
+        toast._size_for(max_w)
+        y = bottom - toast.height()
+        x = max(16, (window.width() - toast.width()) // 2)
+        toast.move_to(x, y, animate and toast is not new)
+        toast.raise_()
+        bottom = y - 8
+
+
+def _hook_window(window: QWidget) -> None:
+    if getattr(window, "_woodesk_toast_hooked", False):
+        return
+    window._woodesk_toast_hooked = True
+    if isinstance(window, QDialog):
+        window.finished.connect(lambda *_: _evacuate(window))
+
+
+def _evacuate(dialog: QWidget) -> None:
+    """Move notifications out of a dialog before it closes, so success messages stay visible."""
+    items = [t for t in _toasts.pop(dialog, []) if not t._closing]
+    target = _main_window
+    if not items or target is None or not target.isVisible():
+        for toast in items:
+            toast.dismiss(instant=True)
+        return
+    for toast in items:
+        toast.reparent(target)
+    _toasts.setdefault(target, []).extend(items)
+    _relayout(target, animate=False)
+
+
+def notify(text: str, kind: str = "info", ms: int = 3500) -> None:
+    window = QApplication.activeModalWidget() or QApplication.activeWindow() or _main_window
+    if window is None:
+        return
+    _hook_window(window)
+    items = _toasts.setdefault(window, [])
+    while len([t for t in items if not t._closing]) >= 3:
+        next(t for t in items if not t._closing).dismiss(instant=True)
+    toast = Toast(window, text, kind)
+    items.append(toast)
+    toast.show()
+    _relayout(window, animate=True, new=toast)
+    toast.raise_()
+    toast.enter()
+    toast.timer.start(max(800, ms))
 
 
 def error_text(e: Exception) -> str:
@@ -75,6 +260,15 @@ def restart_app() -> None:
 
 
 # ----------------------------------------------------------- primitives ---
+def h_align() -> Qt.AlignmentFlag:
+    """Explicit visual alignment for the current UI direction.
+
+    Plain AlignRight/AlignLeft are flipped by QLabel for RTL *text*, which made Persian labels
+    left-aligned while digits/URLs stayed right-aligned. AlignAbsolute keeps them consistent.
+    """
+    return (Qt.AlignRight if cfg.language == "fa" else Qt.AlignLeft) | Qt.AlignAbsolute
+
+
 def ltr(w: QWidget) -> QWidget:
     """Keep technical values (URLs, SKUs, prices, API keys, slugs) left-to-right inside the RTL Persian UI."""
     w.setLayoutDirection(Qt.LeftToRight)
@@ -111,6 +305,7 @@ def label(text: str, name: str = "", muted: bool = False, wrap: bool = False) ->
     if muted:
         lb.setProperty("muted", True)
     lb.setWordWrap(wrap)
+    lb.setAlignment(h_align() | Qt.AlignVCenter)
     return lb
 
 
@@ -119,19 +314,21 @@ class Card(QFrame):
         super().__init__(parent)
         self.setObjectName("card")
         self.lay = QVBoxLayout(self)
-        self.lay.setContentsMargins(16, 14, 16, 14)
+        self.lay.setContentsMargins(18, 16, 18, 16)
+        self.lay.setSpacing(8)
 
 
 class StatCard(Card):
     def __init__(self, title: str, value: str = "-"):
         super().__init__()
-        align = Qt.AlignRight if cfg.language == "fa" else Qt.AlignLeft
+        self.setMinimumHeight(92)
+        align = h_align() | Qt.AlignVCenter
         self.value = QLabel(value)
         self.value.setObjectName("statValue")
-        self.value.setAlignment(align | Qt.AlignVCenter)
+        self.value.setAlignment(align)
         self.lay.addWidget(self.value)
         title_lbl = label(title, muted=True)
-        title_lbl.setAlignment(align | Qt.AlignVCenter)
+        title_lbl.setAlignment(align)
         self.lay.addWidget(title_lbl)
 
     def set(self, v) -> None:
@@ -142,8 +339,10 @@ class PageHeader(QWidget):
     def __init__(self, title: str, subtitle: str = ""):
         super().__init__()
         lay = QHBoxLayout(self)
-        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setContentsMargins(0, 0, 0, 4)
+        lay.setSpacing(16)
         box = QVBoxLayout()
+        box.setSpacing(4)
         box.addWidget(label(title, "h1"))
         if subtitle:
             box.addWidget(label(subtitle, muted=True))
@@ -169,7 +368,11 @@ class SearchBox(QLineEdit):
         self._timer.setInterval(400)
         self._timer.timeout.connect(lambda: self.changed.emit(self.text().strip()))
         self.textChanged.connect(lambda _=None: self._timer.start())
-        self.returnPressed.connect(lambda: self.changed.emit(self.text().strip()))
+        self.returnPressed.connect(self._emit_now)
+
+    def _emit_now(self) -> None:
+        self._timer.stop()
+        self.changed.emit(self.text().strip())
 
 
 class Pager(QWidget):
@@ -231,6 +434,7 @@ class DataTable(QTableWidget):
         hh = self.horizontalHeader()
         hh.setStretchLastSection(False)
         hh.setSectionResizeMode(QHeaderView.Interactive)
+        hh.setDefaultAlignment(h_align() | Qt.AlignVCenter)
         if checkable:
             self.setColumnWidth(0, 34)
             hh.setSectionResizeMode(0, QHeaderView.Fixed)
@@ -250,8 +454,7 @@ class DataTable(QTableWidget):
         it = QTableWidgetItem(str(text))
         if not editable:
             it.setFlags(it.flags() & ~Qt.ItemIsEditable)
-        if align:
-            it.setTextAlignment(align)
+        it.setTextAlignment(align if align else h_align() | Qt.AlignVCenter)
         if data is not None:
             it.setData(Qt.UserRole, data)
         return it

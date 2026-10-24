@@ -3,24 +3,23 @@ Sends user criticisms, suggestions, and attachments directly to the developer se
 """
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QComboBox, QFileDialog, QFormLayout, QGroupBox,
-                               QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit,
+                               QHBoxLayout, QLineEdit, QPlainTextEdit,
                                QVBoxLayout, QWidget)
 
 from ...core.config import cfg
 from ...core.context import AppContext
 from ...core.i18n import t
 from ...core.workers import run_async
-from ..widgets import button, ltr, notify, show_error
+from ..widgets import PageHeader, button, label, ltr, notify, show_error
 
 
 class FeedbackPage(QWidget):
     def __init__(self, ctx: AppContext):
         super().__init__()
+        self.setObjectName("page")
         self.ctx = ctx
         self._file_bytes: bytes | None = None
         self._filename: str = ""
@@ -29,20 +28,14 @@ class FeedbackPage(QWidget):
         lay.setContentsMargins(24, 20, 24, 20)
         lay.setSpacing(14)
 
-        # Title & Description
-        h = QLabel("💬 " + t("Developer Feedback & Support"))
-        h.setStyleSheet("font-size: 20px; font-weight: 700;")
-        lay.addWidget(h)
-
-        sub = QLabel(t("Send your criticisms, suggestions, or bug reports directly to the developer. Your message and optional attachment are received on the server, and no history is kept on your device."))
-        sub.setWordWrap(True)
-        sub.setStyleSheet("color: #64748b; font-size: 13px; line-height: 1.6;")
-        lay.addWidget(sub)
+        lay.addWidget(PageHeader(t("Developer Feedback & Support")))
+        lay.addWidget(label(t("Send your criticisms, suggestions, or bug reports directly to the developer. Your message and optional attachment are received on the server, and no history is kept on your device."),
+                            muted=True, wrap=True))
 
         # Main Form Box
         box = QGroupBox(t("Send Feedback Message"))
-        box.setStyleSheet("QGroupBox { font-weight: 600; padding-top: 16px; margin-top: 10px; }")
         flay = QFormLayout(box)
+        flay.setContentsMargins(14, 18, 14, 14)
         flay.setSpacing(12)
 
         # 1. Subject Category
@@ -72,8 +65,7 @@ class FeedbackPage(QWidget):
         self.btn_attach = button(t("📎 Attach File (Screenshot, Log, Zip...)"), slot=self._choose_file)
         att_row.addWidget(self.btn_attach)
 
-        self.file_label = QLabel(t("No file attached (Max 15 MB)"))
-        self.file_label.setStyleSheet("color: #64748b; font-size: 12px;")
+        self.file_label = label(t("No file attached (Max 15 MB)"), muted=True)
         att_row.addWidget(self.file_label, 1)
 
         self.btn_remove_file = button("✕", slot=self._remove_file)
@@ -86,12 +78,11 @@ class FeedbackPage(QWidget):
 
         # Bottom Actions Row
         action_row = QHBoxLayout()
-        self.status_lbl = QLabel("")
+        self.status_lbl = label("", muted=True)
         action_row.addWidget(self.status_lbl, 1)
 
         self.btn_send = button(t("🚀 Send to Developer"), primary=True, slot=self._send)
         self.btn_send.setMinimumWidth(160)
-        self.btn_send.setFixedHeight(38)
         action_row.addWidget(self.btn_send)
 
         lay.addLayout(action_row)
@@ -124,21 +115,26 @@ class FeedbackPage(QWidget):
             size_kb = size / 1024
             size_str = f"{size_kb:.1f} KB" if size_kb < 1024 else f"{(size_kb/1024):.1f} MB"
             self.file_label.setText(f"📄 {self._filename} ({size_str})")
-            self.file_label.setStyleSheet("color: #2fa36b; font-weight: 600;")
+            self._file_label_state(True)
             self.btn_remove_file.setVisible(True)
         except Exception as e:
             show_error(e)
+
+    def _file_label_state(self, attached: bool) -> None:
+        self.file_label.setProperty("success", attached)
+        self.file_label.style().unpolish(self.file_label)
+        self.file_label.style().polish(self.file_label)
 
     def _remove_file(self):
         self._file_bytes = None
         self._filename = ""
         self.file_label.setText(t("No file attached (Max 15 MB)"))
-        self.file_label.setStyleSheet("color: #64748b; font-size: 12px;")
+        self._file_label_state(False)
         self.btn_remove_file.setVisible(False)
 
     def _send(self):
         if not cfg.server_url:
-            notify(t("Server URL is not configured. Please set the server URL in Settings > Server & privacy."), "warn")
+            notify(t("Server URL is not configured. Please set the server URL in Settings > AI."), "warn")
             return
 
         msg = self.msg_edit.toPlainText().strip()

@@ -69,6 +69,11 @@ def get(name: str) -> str:
     return v
 
 
+def clear_cache() -> None:
+    """Re-read secrets from the OS store (used by the long-running background worker)."""
+    _mem.clear()
+
+
 def _get(name: str) -> str:
     kr = _keyring()
     if kr:

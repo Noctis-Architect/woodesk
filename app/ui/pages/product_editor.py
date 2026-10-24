@@ -11,21 +11,11 @@ from ...api.woo import combo_key, variation_combos
 from ...core.config import cfg
 from ...core.i18n import t
 from ...core.workers import run_async
+from ...seo.wp_meta import SEO_KEYS, meta_value as _meta
 from ..ai_assist import AIButton, run_ai
 from ..components import ImagesEditor, TaxonomyPicker
+from ..seo_inline import SeoScoreCard
 from ..widgets import HtmlEditor, button, label, ltr, notify, show_error
-
-SEO_KEYS = {
-    "yoast": ("_yoast_wpseo_title", "_yoast_wpseo_metadesc", "_yoast_wpseo_focuskw"),
-    "rankmath": ("rank_math_title", "rank_math_description", "rank_math_focus_keyword"),
-}
-
-
-def _meta(p: dict, key: str) -> str:
-    for m in p.get("meta_data", []) or []:
-        if m.get("key") == key:
-            return str(m.get("value") or "")
-    return ""
 
 
 class ProductEditor(QDialog):
@@ -54,8 +44,11 @@ class ProductEditor(QDialog):
         self.status_lbl = label("", muted=True)
         row.addWidget(self.status_lbl)
         row.addStretch()
-        row.addWidget(button(t("Cancel"), slot=self.reject))
+        cancel = button(t("Cancel"), slot=self.reject)
+        cancel.setAutoDefault(False)
+        row.addWidget(cancel)
         self.save_btn = button(t("Save"), primary=True, slot=self.save)
+        self.save_btn.setDefault(True)
         row.addWidget(self.save_btn)
         lay.addLayout(row)
         self._fill()
@@ -65,7 +58,11 @@ class ProductEditor(QDialog):
     # ------------------------------------------------------------ tabs ---
     def _general(self):
         w = QWidget()
+        w.setObjectName("tabPage")
         f = QFormLayout(w)
+        f.setContentsMargins(16, 16, 16, 16)
+        f.setHorizontalSpacing(14)
+        f.setVerticalSpacing(10)
         self.name = QLineEdit()
         self.slug = ltr(QLineEdit())
         self.type = QComboBox()
@@ -79,8 +76,10 @@ class ProductEditor(QDialog):
         self.sku = ltr(QLineEdit())
         self.regular = ltr(QLineEdit())
         self.sale = ltr(QLineEdit())
-        self.sale_from = QDateEdit(calendarPopup=True)
-        self.sale_to = QDateEdit(calendarPopup=True)
+        self.sale_from = ltr(QDateEdit(calendarPopup=True))
+        self.sale_to = ltr(QDateEdit(calendarPopup=True))
+        for date_edit in (self.sale_from, self.sale_to):
+            date_edit.setDisplayFormat("yyyy-MM-dd")
         self.sched = QCheckBox(t("Schedule sale"))
         self.sched.toggled.connect(lambda on: (self.sale_from.setEnabled(on), self.sale_to.setEnabled(on)))
         self.sale_from.setEnabled(False)
@@ -97,15 +96,9 @@ class ProductEditor(QDialog):
         r1.addWidget(self.featured)
         f.addRow(t("Type / Status"), r1)
         f.addRow("SKU", self.sku)
-        r2 = QHBoxLayout()
-        r2.addWidget(label(t("Regular price")))
-        r2.addWidget(self.regular)
-        r2.addWidget(label(t("Sale price")))
-        r2.addWidget(self.sale)
-        self.price_row = QWidget()
-        self.price_row.setLayout(r2)
-        r2.setContentsMargins(0, 0, 0, 0)
-        f.addRow(t("Price"), self.price_row)
+        f.addRow(t("Regular price"), self.regular)
+        f.addRow(t("Sale price"), self.sale)
+        self.price_fields = (self.regular, self.sale)
         r3 = QHBoxLayout()
         r3.addWidget(self.sched)
         r3.addWidget(self.sale_from)
@@ -138,7 +131,11 @@ class ProductEditor(QDialog):
 
     def _inventory(self):
         w = QWidget()
+        w.setObjectName("tabPage")
         f = QFormLayout(w)
+        f.setContentsMargins(16, 16, 16, 16)
+        f.setHorizontalSpacing(14)
+        f.setVerticalSpacing(10)
         self.manage = QCheckBox(t("Manage stock"))
         self.qty = QSpinBox()
         self.qty.setRange(-100000, 10000000)
@@ -161,7 +158,11 @@ class ProductEditor(QDialog):
 
     def _shipping(self):
         w = QWidget()
+        w.setObjectName("tabPage")
         f = QFormLayout(w)
+        f.setContentsMargins(16, 16, 16, 16)
+        f.setHorizontalSpacing(14)
+        f.setVerticalSpacing(10)
         self.weight = ltr(QLineEdit())
         self.dim_l, self.dim_w, self.dim_h = ltr(QLineEdit()), ltr(QLineEdit()), ltr(QLineEdit())
         row = QHBoxLayout()
@@ -175,14 +176,20 @@ class ProductEditor(QDialog):
     def _images(self):
         self.images = ImagesEditor(self.ctx)
         w = QWidget()
+        w.setObjectName("tabPage")
         v = QVBoxLayout(w)
+        v.setContentsMargins(16, 16, 16, 16)
+        v.setSpacing(10)
         v.addWidget(label(t("The first image is the main product image."), muted=True))
         v.addWidget(self.images)
         self.tabs.addTab(w, t("Images"))
 
     def _taxonomy(self):
         w = QWidget()
+        w.setObjectName("tabPage")
         v = QVBoxLayout(w)
+        v.setContentsMargins(16, 16, 16, 16)
+        v.setSpacing(10)
         v.addWidget(label(t("Categories"), "h2"))
         self.cat_picker = TaxonomyPicker(self.ctx.create_woo_category)
         v.addWidget(self.cat_picker)
@@ -195,7 +202,10 @@ class ProductEditor(QDialog):
 
     def _variations(self):
         self.var_tab = QWidget()
+        self.var_tab.setObjectName("tabPage")
         v = QVBoxLayout(self.var_tab)
+        v.setContentsMargins(16, 16, 16, 16)
+        v.setSpacing(10)
         v.addWidget(label(t("Attributes"), "h2"))
         self.attr_table = QTableWidget(0, 4)
         self.attr_table.setHorizontalHeaderLabels([t("Name"), t("Values (comma separated)"), t("Visible"), t("Used for variations")])
@@ -223,7 +233,11 @@ class ProductEditor(QDialog):
 
     def _seo(self):
         w = QWidget()
+        w.setObjectName("tabPage")
         f = QFormLayout(w)
+        f.setContentsMargins(16, 16, 16, 16)
+        f.setHorizontalSpacing(14)
+        f.setVerticalSpacing(10)
         self.seo_plugin = QComboBox()
         self.seo_plugin.addItem(t("None (don't write SEO fields)"), "")
         self.seo_plugin.addItem("Yoast SEO", "yoast")
@@ -238,7 +252,26 @@ class ProductEditor(QDialog):
         f.addRow(t("Focus keyword"), self.seo_kw)
         f.addRow("", self.ai_seo_btn)
         f.addRow("", label(t("Your SEO plugin must expose these meta fields to the REST API for them to be saved."), muted=True, wrap=True))
+        self.seo_score = SeoScoreCard(self._seo_snapshot)
+        f.addRow(self.seo_score)
+        for widget in (self.name, self.seo_title, self.seo_desc, self.seo_kw):
+            widget.textChanged.connect(self.seo_score.schedule)
+        self.short.textChanged.connect(self.seo_score.schedule)
+        self.desc.textChanged.connect(self.seo_score.schedule)
         self.tabs.addTab(w, "SEO")
+
+    def _seo_snapshot(self):
+        images = [{"src": image.get("src", ""), "alt": image.get("alt", "")}
+                  for image in self.images.images() if image.get("src")]
+        body = f"{self.short.text()}\n{self.desc.text()}"
+        return (
+            self.name.text().strip(),
+            body,
+            self.seo_title.text().strip() or self.name.text().strip(),
+            self.seo_desc.text().strip(),
+            self.seo_kw.text().strip(),
+            images,
+        )
 
     # ------------------------------------------------------------ data ---
     def _fill(self):
@@ -293,7 +326,8 @@ class ProductEditor(QDialog):
 
     def _on_type(self):
         ty = self.type.currentData()
-        self.price_row.setEnabled(ty in ("simple", "external"))
+        for field in self.price_fields:
+            field.setEnabled(ty in ("simple", "external"))
         self.sched_row.setEnabled(ty in ("simple", "external"))
         self.general_form.setRowVisible(self.ext_row, ty == "external")
         self.tabs.setTabEnabled(self.tabs.indexOf(self.var_tab), ty in ("variable", "simple"))

@@ -1,10 +1,16 @@
-"""Client for the optional WooDesk server (free AI tier, stats, announcements)."""
+"""Client for the optional WooDesk server (free AI tier, stats, announcements).
+
+The HTTP transport lives here (httpx) and stays fixed, while endpoint paths, payload shaping,
+response parsing and telemetry policy are resolved through `server_logic.call`, which prefers the
+hot-reloadable `remote_service` dynamic module and falls back to the built-in implementation.
+"""
 from __future__ import annotations
 
 import httpx
 
 from ..ai.client import AIClient, AIResult, QuotaExceeded
 from .http import ApiError, make_client, normalize_url, raise_for
+from . import server_logic
 
 
 class ServerClient(AIClient):
@@ -15,12 +21,10 @@ class ServerClient(AIClient):
         self.http = client or make_client(timeout=90)
 
     def _headers(self) -> dict:
-        h = {}
-        if self.token:
-            h["Authorization"] = f"Bearer {self.token}"
-        if self.gmail:
-            h["X-User-Gmail"] = self.gmail
-        return h
+        return server_logic.call("server_headers", self.token, self.gmail)
+
+    def _path(self, name: str) -> str:
+        return server_logic.call("endpoint", name)
 
     def _call(self, method: str, path: str, **kw):
         if not self.base:
@@ -40,13 +44,18 @@ class ServerClient(AIClient):
 
     # ---- public --------------------------------------------------------
     def config(self) -> dict:
-        return self._call("GET", "/v1/config")
+        return self._call("GET", self._path("config"))
 
     def register(self, app_version: str, os_name: str) -> dict:
-        return self._call("POST", "/v1/register", json={"app_version": app_version, "os": os_name})
+        return self._call("POST", self._path("register"), json={"app_version": app_version, "os": os_name})
 
     def announcements(self, version: str, lang: str) -> list[dict]:
-        return self._call("GET", "/v1/announcements", params={"version": version, "lang": lang}).get("items", [])
+        params = server_logic.call("announcements_params", version, lang)
+        data = self._call("GET", self._path("announcements"), params=params)
+        return server_logic.call("extract_announcements", data)
+
+    def catalog(self) -> dict:
+        return self._call("GET", self._path("ai_catalog"))
 
     def free_models(self) -> list[str]:
         conf = self.config()
@@ -54,22 +63,19 @@ class ServerClient(AIClient):
 
     # ---- authenticated -------------------------------------------------
     def quota(self) -> dict:
-        return self._call("GET", "/v1/quota")
+        return self._call("GET", self._path("quota"))
 
     def telemetry(self, payload: dict) -> dict:
-        return self._call("POST", "/v1/telemetry", json=payload)
+        return self._call("POST", self._path("telemetry"), json=payload)
 
     def telemetry_delete(self) -> dict:
-        return self._call("DELETE", "/v1/telemetry")
+        return self._call("DELETE", self._path("telemetry"))
 
     def chat(self, messages, temperature=0.7, max_tokens=None, model: str | None = None) -> AIResult:
-        payload = {"messages": messages, "temperature": temperature, "max_tokens": max_tokens}
-        if model:
-            payload["model"] = model
-        if self.gmail:
-            payload["gmail"] = self.gmail
-        data = self._call("POST", "/v1/ai/chat", json=payload)
-        return AIResult(data.get("content", ""), data.get("usage") or {}, data.get("remaining"))
+        req = server_logic.call("ai_chat_request", messages, temperature, max_tokens, model, self.gmail)
+        data = self._call("POST", req["path"], json=req["json"])
+        parsed = server_logic.call("parse_ai_response", data)
+        return AIResult(parsed.get("content", ""), parsed.get("usage") or {}, parsed.get("remaining"))
 
     def send_feedback(self, subject: str, message: str, email: str = "", file_bytes: bytes | None = None, filename: str | None = None) -> dict:
         import base64
@@ -81,5 +87,4 @@ class ServerClient(AIClient):
         if file_bytes:
             payload["file_base64"] = base64.b64encode(file_bytes).decode("ascii")
             payload["filename"] = filename or "attachment"
-        return self._call("POST", "/v1/feedback", json=payload)
-
+        return self._call("POST", self._path("feedback"), json=payload)

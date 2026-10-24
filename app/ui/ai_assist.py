@@ -20,13 +20,19 @@ def ai_ready() -> bool:
     a = cfg.ai
     if a.mode == "server":
         if not cfg.server_url:
-            notify(t("Free AI needs a server URL (Settings > Server & privacy)."), "warn")
+            notify(t("Free AI needs a server URL (Settings > AI)."), "warn")
             return False
         return True
+    from ..ai.catalog import catalog
     from ..core import secrets
 
-    local = any(x in a.base_url for x in ("localhost", "127.0.0.1", "[::1]", "//192.168.", "//10."))
-    if not (a.base_url and a.model and (secrets.get("ai:api_key") or local)):
+    provider = catalog.resolve_provider(a.provider_id, a.base_url, a.api_format)
+    base_url = a.base_url.strip() or provider.get("base_url", "")
+    key = secrets.get(f"ai:api_key:{provider['id']}")
+    if not key and not a.provider_id:
+        key = secrets.get("ai:api_key")
+    needs_key = bool((provider.get("auth") or {}).get("required", True))
+    if not base_url or not a.model.strip() or (needs_key and not key):
         notify(t("Configure your AI provider first (Settings > AI)."), "warn")
         return False
     return True
@@ -61,8 +67,12 @@ class ResultDialog(QDialog):
         lay.addLayout(row)
         row = QHBoxLayout()
         row.addStretch()
-        row.addWidget(button(t("Cancel"), slot=self.reject))
-        row.addWidget(button(t("Apply"), primary=True, slot=self.accept))
+        cancel = button(t("Cancel"), slot=self.reject)
+        cancel.setAutoDefault(False)
+        row.addWidget(cancel)
+        apply_btn = button(t("Apply"), primary=True, slot=self.accept)
+        apply_btn.setDefault(True)
+        row.addWidget(apply_btn)
         lay.addLayout(row)
 
     def text(self) -> str:

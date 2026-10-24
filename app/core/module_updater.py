@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Callable
 
 import httpx
+from PySide6.QtCore import QLockFile
 
 from .dynamic_loader import DynamicModuleManager, dynamic_manager, validate_module_name
 
@@ -50,7 +51,8 @@ class ModuleUpdater:
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
-        self._reload_failed: set[str] = set()  # modules whose on-disk update could not be reloaded in memory
+        self._reload_failed: set[str] = set()
+        self._module_hashes: dict[str, str] = {}
 
     def check_and_update(self, http_client: httpx.Client | None = None) -> list[str]:
         """
@@ -58,6 +60,17 @@ class ModuleUpdater:
         verifies SHA-256 integrity, replaces them atomically, and hot-reloads them.
         Returns a list of successfully updated module names.
         """
+        lock = QLockFile(str(self.loader.modules_dir / ".woodesk-update.lock"))
+        lock.setStaleLockTime(5 * 60_000)
+        if not lock.tryLock(200):
+            logger.debug("Another WooDesk process is updating dynamic modules; skipping this pass.")
+            return []
+        try:
+            return self._check_and_update_locked(http_client)
+        finally:
+            lock.unlock()
+
+    def _check_and_update_locked(self, http_client: httpx.Client | None = None) -> list[str]:
         if not self.manifest_url:
             logger.debug("No manifest URL provided for ModuleUpdater.")
             return []
@@ -131,22 +144,23 @@ class ModuleUpdater:
             logger.error("Security violation: Attempted to write dynamic module '%s' outside modules/ folder!", clean_name)
             return False
 
-        # If current target file already matches expected sha, skip redownload
+        # If the file is current but this process consumed a different revision (another
+        # process may have updated it), reload the on-disk module into memory.
         if target_file.exists():
             current_sha = compute_sha256(target_file)
             if current_sha == expected_sha:
-                # The file is up to date. If a previous in-memory reload failed (transient error),
-                # retry it instead of skipping this module forever.
-                if clean_name in self._reload_failed:
+                if self._module_hashes.get(clean_name) != expected_sha:
                     if self.loader.reload_module(clean_name):
+                        self._module_hashes[clean_name] = expected_sha
                         self._reload_failed.discard(clean_name)
-                        logger.info("Recovered in-memory reload for '%s' (%s)", clean_name, version)
+                        logger.info("Synchronized in-memory module '%s' from disk (%s)", clean_name, version)
                         if self.on_module_updated:
                             try:
                                 self.on_module_updated(clean_name, version)
                             except Exception as cb_err:
                                 logger.error("Error in on_module_updated callback: %s", cb_err)
-                        return True
+                    else:
+                        self._reload_failed.add(clean_name)
                 logger.debug("Module '%s' in %s is already at target version (%s), skipping.", clean_name, modules_dir, version)
                 return False
 
@@ -178,6 +192,7 @@ class ModuleUpdater:
             # 5. Hot-reload module in memory
             reloaded = self.loader.reload_module(clean_name)
             if reloaded:
+                self._module_hashes[clean_name] = expected_sha
                 self._reload_failed.discard(clean_name)
                 if self.on_module_updated:
                     try:

@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QGuiApplication, QIcon
-from PySide6.QtWidgets import (QAbstractItemView, QFileDialog, QHBoxLayout, QInputDialog, QListWidget,
+from PySide6.QtWidgets import (QAbstractItemView, QDialog, QFileDialog, QHBoxLayout, QInputDialog, QListWidget,
                                QListWidgetItem, QVBoxLayout, QWidget)
 
 from ...api.wp import media_thumb
+from ...core.config import cfg
 from ...core.i18n import t
 from ...core.workers import run_async
 from ..components import IMG_FILTER
+from ..media_alt import BulkAltDialog
 from ..widgets import PageHeader, Pager, SearchBox, button, confirm, load_pixmap, notify, show_error
 
 
@@ -16,9 +18,10 @@ class MediaPage(QWidget):
     def __init__(self, ctx):
         super().__init__()
         self.setObjectName("page")
-        self.ctx, self.page, self._loaded_once = ctx, 1, False
+        self.ctx, self.page, self._loaded_once, self._req = ctx, 1, False, 0
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(24, 20, 24, 16)
+        lay.setContentsMargins(24, 22, 24, 20)
+        lay.setSpacing(12)
         head = PageHeader(t("Media"), t("Images and files in your WordPress library"))
         head.add_action(button(t("Refresh"), slot=lambda: self.load()))
         head.add_action(button("+ " + t("Upload"), primary=True, slot=self.upload))
@@ -28,6 +31,7 @@ class MediaPage(QWidget):
         self.search.changed.connect(lambda _: self.load(1))
         bar.addWidget(self.search, 1)
         bar.addWidget(button(t("Copy URL"), slot=self.copy_url))
+        bar.addWidget(button("✨ " + t("AI alt text"), slot=self.ai_alt))
         bar.addWidget(button(t("Edit alt text"), slot=self.edit_alt))
         bar.addWidget(button(t("Delete"), danger=True, slot=self.delete))
         lay.addLayout(bar)
@@ -51,6 +55,7 @@ class MediaPage(QWidget):
 
     def site_changed(self):
         self._loaded_once = False
+        self._req += 1
         self.grid.clear()
 
     def load(self, page=None):
@@ -60,7 +65,15 @@ class MediaPage(QWidget):
             notify(t("Add a site in Settings first."), "warn")
             return
         pg, q = self.page, self.search.text().strip()
-        run_async(lambda: self.ctx.wp().media(pg, 30, q), ok=lambda r: self._fill(pg, r), err=show_error)
+        self._req += 1
+        req, site_id = self._req, cfg.active_site
+
+        def current():
+            return req == self._req and site_id == cfg.active_site
+
+        run_async(lambda: self.ctx.wp().media(pg, 30, q),
+                  ok=lambda r: self._fill(pg, r) if current() else None,
+                  err=lambda e: show_error(e) if current() else None)
 
     def _fill(self, page, res):
         items, total, pages = res
@@ -91,6 +104,14 @@ class MediaPage(QWidget):
         if sel:
             QGuiApplication.clipboard().setText("\n".join(m.get("source_url", "") for m in sel))
             notify(t("URL copied"), "ok")
+
+    def ai_alt(self):
+        selected = [m for m in self._sel() if (m.get("mime_type") or "").startswith("image")]
+        if not selected:
+            notify(t("Select one or more images first."), "warn")
+            return
+        if BulkAltDialog(self.ctx, selected, self).exec() == QDialog.Accepted:
+            self.load()
 
     def edit_alt(self):
         sel = self._sel()

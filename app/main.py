@@ -91,5 +91,11 @@ def main() -> None:
 
     win.show()
     ctx.start_background()
+    try:
+        from .notifications.controller import sync_background
+
+        sync_background()
+    except Exception as exc:
+        logger.warning("Could not start background notifications: %s", exc)
     sys.exit(app.exec())
 

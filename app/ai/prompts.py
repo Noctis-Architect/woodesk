@@ -1,103 +1,98 @@
-"""Prompt templates. Every task returns chat messages for the AI client."""
+"""Prompt builders backed by the versioned, hot-updatable AI catalog."""
 from __future__ import annotations
 
 import json
 import re
 
-LANG_NAMES = {
-    "fa": "Persian (Farsi)", "en": "English", "ar": "Arabic", "tr": "Turkish",
-    "de": "German", "fr": "French", "es": "Spanish", "ru": "Russian",
-}
-
-SYSTEM = (
-    "You are an expert e-commerce copywriter, blogger and SEO specialist working inside a "
-    "WordPress/WooCommerce management app. Follow the instructions exactly. Output ONLY the "
-    "requested content - no preface, no explanations, no markdown code fences. Never invent "
-    "technical specifications, prices, certifications or claims that were not provided."
-)
-
-HTML_RULE = "Format as clean HTML using only <p>, <h2>, <h3>, <ul>, <li>, <strong>, <em>. No <html>/<body>/<h1> tags."
-
-
-def _msg(user: str) -> list[dict]:
-    return [{"role": "system", "content": SYSTEM}, {"role": "user", "content": user}]
+from .catalog import HTML_RULE, catalog
 
 
 def _lang(code: str) -> str:
-    return LANG_NAMES.get(code, code)
+    return catalog.language(code)
 
 
-def product_description(name: str, lang: str, details: str = "", existing: str = "", keywords: str = "", tone: str = "persuasive but honest", context: str = "") -> list[dict]:
-    return _msg(
-        f"Write a complete product description in {_lang(lang)} for the product below.\n"
-        f"Product name: {name}\nProduct metadata (from the shop): {context or '-'}\n"
-        f"Known details: {details or '-'}\nFocus keywords: {keywords or '-'}\n"
-        f"Existing description (improve/reuse facts if present): {existing or '-'}\nTone: {tone}.\n"
-        f"Structure: short intro paragraph, a bullet list of key features, a closing paragraph. {HTML_RULE}"
-    )
+def _value(value: str, fallback: str = "-") -> str:
+    return value.strip() if isinstance(value, str) and value.strip() else fallback
+
+
+def product_description(name: str, lang: str, details: str = "", existing: str = "",
+                        keywords: str = "", tone: str = "persuasive but honest", context: str = "") -> list[dict]:
+    return catalog.render("product_description", {
+        "name": name, "language": _lang(lang), "details": _value(details), "existing": _value(existing),
+        "keywords": _value(keywords), "tone": tone or "persuasive but honest", "context": _value(context),
+        "html_rule": HTML_RULE,
+    })
 
 
 def product_short(name: str, lang: str, description: str = "", context: str = "") -> list[dict]:
-    return _msg(
-        f"Write a short product summary (max 2 sentences, ~40 words) in {_lang(lang)} for '{name}'.\n"
-        f"Product metadata (from the shop): {context or '-'}\n"
-        f"Base it on this description if available: {description or '-'}\nOutput plain HTML with a single <p>."
-    )
+    return catalog.render("product_short", {
+        "name": name, "language": _lang(lang), "description": _value(description), "context": _value(context),
+    })
 
 
 def seo_meta(title: str, lang: str, content: str = "", keyword: str = "", context: str = "") -> list[dict]:
-    return _msg(
-        f"Create SEO metadata in {_lang(lang)} for the page below.\nTitle: {title}\nFocus keyword: {keyword or '-'}\n"
-        f"Page metadata: {context or '-'}\nContent: {content[:3000] or '-'}\n"
-        'Return ONLY a JSON object: {"title": "<=60 chars", "description": "<=155 chars", '
-        '"slug": "latin-lowercase-hyphenated", "focus_keyword": "..."}'
-    )
+    return catalog.render("seo_meta", {
+        "title": title, "language": _lang(lang), "keyword": _value(keyword),
+        "context": _value(context), "content": content[:3000] or "-",
+    })
 
 
 def rewrite(text: str, lang: str, instruction: str = "Improve clarity and flow, keep the meaning") -> list[dict]:
-    return _msg(
-        f"Rewrite the text below in {_lang(lang)}. Instruction: {instruction}.\n"
-        f"Keep any HTML tags/structure that already exist.\n\nTEXT:\n{text}"
-    )
+    return catalog.render("rewrite", {
+        "text": text, "language": _lang(lang),
+        "instruction": instruction or "Improve clarity and flow, keep the meaning",
+    })
 
 
 def translate(text: str, target_lang: str) -> list[dict]:
-    return _msg(f"Translate the text below into {_lang(target_lang)}. Keep HTML tags unchanged.\n\nTEXT:\n{text}")
+    return catalog.render("translate", {"text": text, "language": _lang(target_lang)})
 
 
 def post_outline(topic: str, lang: str, keywords: str = "", context: str = "") -> list[dict]:
-    return _msg(
-        f"Create a detailed blog article outline in {_lang(lang)} about: {topic}\n"
-        f"Article metadata (from the site): {context or '-'}\nKeywords: {keywords or '-'}\n"
-        "Return a list of H2 headings, each with 2-3 bullet points. " + HTML_RULE
-    )
+    return catalog.render("post_outline", {
+        "topic": topic, "language": _lang(lang), "keywords": _value(keywords), "context": _value(context),
+        "html_rule": HTML_RULE,
+    })
 
 
-def post_draft(topic: str, lang: str, keywords: str = "", outline: str = "", words: int = 900, context: str = "") -> list[dict]:
-    return _msg(
-        f"Write a complete, original blog article in {_lang(lang)} (about {words} words) on: {topic}\n"
-        f"Article metadata (from the site): {context or '-'}\n"
-        f"Keywords to include naturally: {keywords or '-'}\nOutline to follow (optional): {outline or '-'}\n"
-        f"Use an engaging introduction, H2/H3 sections and a conclusion. {HTML_RULE}"
-    )
+def post_draft(topic: str, lang: str, keywords: str = "", outline: str = "", words: int = 900,
+               context: str = "") -> list[dict]:
+    return catalog.render("post_draft", {
+        "topic": topic, "language": _lang(lang), "keywords": _value(keywords), "outline": _value(outline),
+        "words": words, "context": _value(context), "html_rule": HTML_RULE,
+    })
 
 
 def excerpt(content: str, lang: str, context: str = "") -> list[dict]:
-    return _msg(f"Write a 2-sentence excerpt in {_lang(lang)} (plain text, <=40 words) for this article:\n"
-                f"Article metadata: {context or '-'}\n{content[:4000]}")
+    return catalog.render("excerpt", {
+        "content": content[:4000] or "-", "language": _lang(lang), "context": _value(context),
+    })
 
 
 def suggest_tags(content: str, lang: str, context: str = "") -> list[dict]:
-    return _msg(f"Suggest 5-8 short tags in {_lang(lang)} for the content below. "
-                f"Return them comma-separated on one line.\nContext: {context or '-'}\n{content[:3000]}")
+    return catalog.render("suggest_tags", {
+        "content": content[:3000] or "-", "language": _lang(lang), "context": _value(context),
+    })
 
 
 def alt_text(name: str, lang: str) -> list[dict]:
-    return _msg(f"Write a concise image alt text (<=100 chars) in {_lang(lang)} for a product photo of: {name}")
+    return catalog.render("alt_text", {"name": name, "language": _lang(lang)})
+
+
+def seo_audit(payload: dict, lang: str) -> list[dict]:
+    return catalog.render("seo_audit", {
+        "language": _lang(lang), "data": json.dumps(payload, ensure_ascii=False),
+    })
+
+
+def perf_analysis(payload: dict, lang: str) -> list[dict]:
+    return catalog.render("perf_analysis", {
+        "language": _lang(lang), "data": json.dumps(payload, ensure_ascii=False),
+    })
 
 
 def parse_json_loose(text: str) -> dict:
-    """Extract a JSON object from a model reply, tolerating ``` fences and chatter."""
+    """Extract a JSON object from a model reply, tolerating fences and chatter."""
     text = text.strip()
     try:
         value = json.loads(text)
@@ -106,7 +101,7 @@ def parse_json_loose(text: str) -> dict:
     except Exception:
         pass
 
-    text = re.sub(r"```[a-zA-Z0-9_-]*", "", text).strip()  # drop opening fences (```json ...)
+    text = re.sub(r"```[a-zA-Z0-9_-]*", "", text).strip()
     decoder = json.JSONDecoder()
     pos = 0
     while True:
@@ -125,5 +120,5 @@ def parse_json_loose(text: str) -> dict:
 
 def strip_fences(text: str) -> str:
     text = text.strip()
-    m = re.fullmatch(r"```(?:html|markdown|md)?\s*(.*?)\s*```", text, re.S)
-    return m.group(1) if m else text
+    match = re.fullmatch(r"```(?:html|markdown|md)?\s*(.*?)\s*```", text, re.S)
+    return match.group(1) if match else text

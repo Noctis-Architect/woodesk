@@ -3,16 +3,20 @@ from __future__ import annotations
 import html
 
 from PySide6.QtCore import QDateTime, Qt
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QDateTimeEdit, QDialog, QFormLayout, QHBoxLayout, QLineEdit,
-                               QMenu, QPlainTextEdit, QSplitter, QTabWidget, QToolButton, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QDateTimeEdit, QDialog, QFormLayout, QHBoxLayout, QHeaderView,
+                               QLineEdit, QMenu, QPlainTextEdit, QSplitter, QTabWidget, QToolButton, QVBoxLayout,
+                               QWidget)
 
 from ...ai import prompts
 from ...core.config import cfg
 from ...core.i18n import t
 from ...api.http import run_parallel
 from ...core.workers import run_async
+from ...seo.wp_meta import SEO_KEYS, meta_value as _meta
 from ..ai_assist import AIButton, run_ai
 from ..components import ImagesEditor, TaxonomyPicker
+from ..seo_bulk import SeoBulkDialog
+from ..seo_inline import SeoScoreCard
 from ..widgets import DataTable, HtmlEditor, PageHeader, Pager, SearchBox, button, confirm, label, ltr, notify, show_error
 
 STATUS = [("publish", "Published"), ("draft", "Draft"), ("pending", "Pending review"), ("future", "Scheduled"), ("private", "Private")]
@@ -64,6 +68,7 @@ class PostEditor(QDialog):
             self.status.addItem(t(v), k)
         self.status.currentIndexChanged.connect(self._status_changed)
         self.date = QDateTimeEdit(QDateTime.currentDateTime().addDays(1))
+        self.date.setLayoutDirection(Qt.LeftToRight)
         self.date.setCalendarPopup(True)
         self.date.setDisplayFormat("yyyy-MM-dd HH:mm")
         self.slug = ltr(QLineEdit())
@@ -75,9 +80,15 @@ class PostEditor(QDialog):
         rv.addLayout(f)
         tabs = QTabWidget()
         self.cats = TaxonomyPicker(self.ctx.create_wp_category)
+        self.cats.setObjectName("tabPage")
+        self.cats.layout().setContentsMargins(16, 16, 16, 16)
+        self.cats.layout().setSpacing(10)
         tabs.addTab(self.cats, t("Categories"))
         tw = QWidget()
+        tw.setObjectName("tabPage")
         tv = QVBoxLayout(tw)
+        tv.setContentsMargins(16, 16, 16, 16)
+        tv.setSpacing(10)
         tv.addWidget(label(t("Tags (comma separated)"), muted=True))
         self.tags = QLineEdit()
         tv.addWidget(self.tags)
@@ -86,15 +97,47 @@ class PostEditor(QDialog):
         tv.addStretch()
         tabs.addTab(tw, t("Tags"))
         self.featured = ImagesEditor(ctx, max_images=1)
+        self.featured.setObjectName("tabPage")
+        self.featured.layout().setContentsMargins(16, 16, 16, 16)
         tabs.addTab(self.featured, t("Featured image"))
+        seo_tab = QWidget()
+        seo_tab.setObjectName("tabPage")
+        sf = QFormLayout(seo_tab)
+        sf.setContentsMargins(16, 16, 16, 16)
+        sf.setHorizontalSpacing(14)
+        sf.setVerticalSpacing(10)
+        self.seo_plugin = QComboBox()
+        self.seo_plugin.addItem(t("None (don't write SEO fields)"), "")
+        self.seo_plugin.addItem("Yoast SEO", "yoast")
+        self.seo_plugin.addItem("Rank Math", "rankmath")
+        self.seo_title = QLineEdit()
+        self.seo_desc = QLineEdit()
+        self.seo_kw = QLineEdit()
+        self.ai_seo_btn = AIButton("Generate SEO fields", self.ai_seo)
+        sf.addRow(t("SEO plugin"), self.seo_plugin)
+        sf.addRow(t("Meta title"), self.seo_title)
+        sf.addRow(t("Meta description"), self.seo_desc)
+        sf.addRow(t("Focus keyword"), self.seo_kw)
+        sf.addRow("", self.ai_seo_btn)
+        sf.addRow("", label(t("Your SEO plugin must expose these meta fields to the REST API for them to be saved."), muted=True, wrap=True))
+        self.seo_score = SeoScoreCard(self._seo_snapshot)
+        sf.addRow(self.seo_score)
+        for widget in (self.title, self.seo_title, self.seo_desc, self.seo_kw):
+            widget.textChanged.connect(self.seo_score.schedule)
+        self.content.textChanged.connect(self.seo_score.schedule)
+        self.excerpt.textChanged.connect(self.seo_score.schedule)
+        tabs.addTab(seo_tab, "SEO")
         rv.addWidget(tabs, 1)
         split.addWidget(right)
         split.setSizes([650, 330])
 
         row = QHBoxLayout()
         row.addStretch()
-        row.addWidget(button(t("Cancel"), slot=self.reject))
+        cancel = button(t("Cancel"), slot=self.reject)
+        cancel.setAutoDefault(False)
+        row.addWidget(cancel)
         self.save_btn = button(t("Save"), primary=True, slot=self.save)
+        self.save_btn.setDefault(True)
         row.addWidget(self.save_btn)
         root.addLayout(row)
         self._fill()
@@ -111,6 +154,15 @@ class PostEditor(QDialog):
             self.date.setDateTime(QDateTime.fromString(p["date"][:19], "yyyy-MM-ddTHH:mm:ss"))
         self.slug.setText(p.get("slug", ""))
         self.sticky.setChecked(bool(p.get("sticky")))
+        for plugin, keys in SEO_KEYS.items():
+            if any(_meta(p, key) for key in keys):
+                index = self.seo_plugin.findData(plugin)
+                if index >= 0:
+                    self.seo_plugin.setCurrentIndex(index)
+                self.seo_title.setText(_meta(p, keys[0]))
+                self.seo_desc.setText(_meta(p, keys[1]))
+                self.seo_kw.setText(_meta(p, keys[2]))
+                break
         self._status_changed()
         if p.get("featured_media"):
             def show(m):
@@ -122,6 +174,18 @@ class PostEditor(QDialog):
 
     def _status_changed(self):
         self.date.setEnabled(self.status.currentData() == "future")
+
+    def _seo_snapshot(self):
+        images = [{"src": image.get("src", ""), "alt": image.get("alt", "")}
+                  for image in self.featured.images() if image.get("src")]
+        return (
+            self.title.text().strip(),
+            self.content.text(),
+            self.seo_title.text().strip() or self.title.text().strip(),
+            self.seo_desc.text().strip(),
+            self.seo_kw.text().strip(),
+            images,
+        )
 
     def _load_tax(self):
         # categories come from the per-site cache; only the tags this post already has are fetched (by id)
@@ -197,12 +261,17 @@ class PostEditor(QDialog):
         def apply(d):
             if d.get("description"):
                 self.excerpt.setPlainText(d["description"])
+                self.seo_desc.setText(d["description"])
             if d.get("slug") and not self.slug.text():
                 self.slug.setText(d["slug"])
-            if d.get("title") and not self.title.text():
-                self.title.setText(d["title"])
+            if d.get("title"):
+                if not self.title.text():
+                    self.title.setText(d["title"])
+                self.seo_title.setText(d["title"])
+            if d.get("focus_keyword"):
+                self.seo_kw.setText(d["focus_keyword"])
 
-        run_ai(self, self.ctx, prompts.seo_meta(self.title.text(), self._lang(), self.content.text(), context=self._ai_context()), apply, "SEO",
+        run_ai(self, self.ctx, prompts.seo_meta(self.title.text(), self._lang(), self.content.text(), self.seo_kw.text(), context=self._ai_context()), apply, "SEO",
                json_mode=True, max_tokens=400, busy=self.ai_excerpt_btn)
 
     def md_to_html(self):
@@ -225,6 +294,14 @@ class PostEditor(QDialog):
             data["date"] = self.date.dateTime().toString("yyyy-MM-ddTHH:mm:ss")
         feat = self.featured.images()
         data["featured_media"] = feat[0]["id"] if feat and feat[0].get("id") else 0
+        plugin = self.seo_plugin.currentData()
+        if plugin:
+            keys = SEO_KEYS[plugin]
+            data["meta_data"] = [
+                {"key": keys[0], "value": self.seo_title.text()},
+                {"key": keys[1], "value": self.seo_desc.text()},
+                {"key": keys[2], "value": self.seo_kw.text()},
+            ]
         names = [x.strip() for x in self.tags.text().split(",") if x.strip()]
         pid = self.p.get("id")
         self.save_btn.setEnabled(False)
@@ -245,7 +322,8 @@ class PostsPage(QWidget):
         self.ctx, self.rows, self.page, self._loaded_once, self._req = ctx, [], 1, False, 0
         self.cat_names: dict[int, str] = {}
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(24, 20, 24, 16)
+        lay.setContentsMargins(24, 22, 24, 20)
+        lay.setSpacing(12)
         head = PageHeader(t("Posts"), t("Write and manage blog articles"))
         self.bulk = QToolButton()
         self.bulk.setText(t("Bulk actions") + " ▾")
@@ -253,6 +331,7 @@ class PostsPage(QWidget):
         m = QMenu(self.bulk)
         m.addAction(t("Set Published"), lambda: self.bulk_status("publish"))
         m.addAction(t("Set Draft"), lambda: self.bulk_status("draft"))
+        m.addAction(t("SEO audit selected"), self.bulk_seo)
         m.addSeparator()
         m.addAction(t("Move to trash"), lambda: self.bulk_delete(False))
         m.addAction(t("Delete permanently"), lambda: self.bulk_delete(True))
@@ -274,10 +353,10 @@ class PostsPage(QWidget):
         lay.addLayout(bar)
         self.table = DataTable([t("Title"), t("Status"), t("Date"), t("Categories")])
         self.table.verticalHeader().setDefaultSectionSize(44)
-        self.table.setColumnWidth(1, 380)
-        self.table.setColumnWidth(2, 110)
-        self.table.setColumnWidth(3, 140)
-        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.setColumnWidth(2, 140)
+        self.table.setColumnWidth(3, 120)
+        self.table.setColumnWidth(4, 240)
+        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.table.cellDoubleClicked.connect(lambda r, c: self.edit_row(r))
         lay.addWidget(self.table, 1)
         self.pager = Pager()
@@ -289,11 +368,17 @@ class PostsPage(QWidget):
             return
         if not self._loaded_once and self.ctx.has_site():
             self._loaded_once = True
-            run_async(self.ctx.wp_categories, ok=lambda c: self.cat_names.update({x["id"]: x["name"] for x in c}), err=lambda e: None)
+            site_id = cfg.active_site
+            run_async(self.ctx.wp_categories,
+                      ok=lambda c: self.cat_names.update({x["id"]: x["name"] for x in c}) if site_id == cfg.active_site else None,
+                      err=lambda e: None)
             self.load(1)
 
     def site_changed(self):
         self._loaded_once = False
+        self._req += 1
+        self.rows = []
+        self.cat_names = {}
         self.table.setRowCount(0)
 
     def load(self, page=None):
@@ -307,8 +392,15 @@ class PostsPage(QWidget):
             return
         pg, q, st = self.page, self.search.text().strip(), self.f_status.currentData()
         self._req += 1
-        req = self._req  # answers can arrive out of order while typing; only the newest one is shown
-        run_async(lambda: self.ctx.wp().posts(pg, 20, q, st), ok=lambda r: self._fill(pg, r) if req == self._req else None, err=show_error)
+        req = self._req
+        site_id = cfg.active_site
+
+        def current():
+            return req == self._req and site_id == cfg.active_site
+
+        run_async(lambda: self.ctx.wp().posts(pg, 20, q, st),
+                  ok=lambda r: self._fill(pg, r) if current() else None,
+                  err=lambda e: show_error(e) if current() else None)
 
     def _fill(self, page, res):
         items, total, pages = res
@@ -346,6 +438,15 @@ class PostsPage(QWidget):
 
     def _selected(self):
         return [self.rows[r] for r in self.table.checked_rows() if r < len(self.rows)]
+
+    def bulk_seo(self):
+        sel = self._selected()
+        if not sel:
+            return
+        if len(sel) > 20:
+            sel = sel[:20]
+            notify(t("Only the first 20 selected items are audited."), "warn")
+        SeoBulkDialog(self.ctx, sel, "post", self).exec()
 
     def bulk_status(self, status):
         sel = self._selected()

@@ -9,23 +9,24 @@
 import sys
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 ROOT = Path(SPECPATH).resolve().parent  # project root (the spec lives in packaging/)
 
 datas = [
     (str(ROOT / "app" / "assets"), "app/assets"),
     (str(ROOT / "modules"), "modules"),
-]
+] + collect_data_files("playwright")
 
 hiddenimports = [
+    "app.notifications.worker",
     "keyring.backends.Windows",
     "keyring.backends.macOS",
     "keyring.backends.SecretService",
     "keyring.backends.kwallet",
     "keyring.backends.libsecret",
     "keyring.backends.fail",
-] + collect_submodules("keyring.backends") + collect_submodules("markdown.extensions")
+] + collect_submodules("keyring.backends") + collect_submodules("markdown.extensions") + collect_submodules("playwright")
 
 icon = ROOT / "app" / "assets" / "branding" / "woodesk.ico"
 

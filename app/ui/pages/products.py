@@ -5,12 +5,14 @@ import html
 import re
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (QComboBox, QDialog, QDoubleSpinBox, QFileDialog, QFormLayout, QHBoxLayout, QInputDialog,
-                               QMenu, QToolButton, QVBoxLayout, QWidget, QDialogButtonBox)
+from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFormLayout,
+                               QHBoxLayout, QInputDialog, QMenu, QToolButton, QVBoxLayout, QWidget)
 
+from ...core.config import cfg
 from ...core.i18n import t
 from ...core.workers import run_async
 from ..widgets import (DataTable, PageHeader, Pager, SearchBox, button, confirm, notify, show_error, table_thumb)
+from ..seo_bulk import SeoBulkDialog
 from .bulk_ai import BulkAIDialog
 from .product_editor import ProductEditor
 
@@ -64,7 +66,8 @@ class ProductsPage(QWidget):
         self._req = 0
         self.cats: list[dict] = []
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(24, 20, 24, 16)
+        lay.setContentsMargins(24, 22, 24, 20)
+        lay.setSpacing(12)
         head = PageHeader(t("Products"), t("Manage your WooCommerce catalogue"))
         self.bulk = QToolButton()
         self.bulk.setText(t("Bulk actions") + " ▾")
@@ -73,7 +76,7 @@ class ProductsPage(QWidget):
         for text, fn in [
             ("Set Published", lambda: self.bulk_status("publish")), ("Set Draft", lambda: self.bulk_status("draft")),
             ("Adjust prices...", self.bulk_price), ("Set stock status...", self.bulk_stock),
-            ("✨ Generate descriptions with AI...", self.bulk_ai), (None, None),
+            ("✨ Generate descriptions with AI...", self.bulk_ai), ("SEO audit selected", self.bulk_seo), (None, None),
             ("Export CSV", self.export_csv), ("Import CSV (update/create)", self.import_csv), (None, None),
             ("Move to trash", lambda: self.bulk_delete(False)), ("Delete permanently", lambda: self.bulk_delete(True)),
         ]:
@@ -110,7 +113,7 @@ class ProductsPage(QWidget):
 
         self.table = DataTable([t("Image"), t("Name"), "SKU", t("Type"), t("Price"), t("Sale"), t("Stock"), t("Status"), t("Categories")])
         self.table.setColumnWidth(COL_IMG, 60)
-        self.table.setColumnWidth(COL_NAME, 280)
+        self.table.setColumnWidth(COL_NAME, 240)
         self.table.setColumnWidth(COL_SKU, 100)
         self.table.setColumnWidth(COL_TYPE, 80)
         self.table.setColumnWidth(COL_REG, 90)
@@ -131,11 +134,17 @@ class ProductsPage(QWidget):
     def on_show(self):
         if not self._loaded_once and self.ctx.has_site():
             self._loaded_once = True
-            run_async(self.ctx.woo_categories, ok=self._cats_loaded, err=show_error)
+            site_id = cfg.active_site
+            run_async(self.ctx.woo_categories,
+                      ok=lambda cats: self._cats_loaded(cats) if site_id == cfg.active_site else None,
+                      err=lambda e: show_error(e) if site_id == cfg.active_site else None)
             self.load(1)
 
     def site_changed(self):
         self._loaded_once = False
+        self._req += 1
+        self.rows = []
+        self.cats = []
         self.table.setRowCount(0)
 
     def _cats_loaded(self, cats):
@@ -159,9 +168,15 @@ class ProductsPage(QWidget):
         pg = self.page
         q, st, sk, cat = self.search.text().strip(), self.f_status.currentData(), self.f_stock.currentData(), self.f_cat.currentData()
         self._req += 1
-        req = self._req  # typing/filtering fires several requests; answers can arrive out of order, show only the newest
+        req = self._req
+        site_id = cfg.active_site
+
+        def current():
+            return req == self._req and site_id == cfg.active_site
+
         run_async(lambda: self.ctx.woo().products(pg, 20, q, st, cat or None, sk),
-                  ok=lambda r: self._fill(pg, r) if req == self._req else None, err=show_error)
+                  ok=lambda r: self._fill(pg, r) if current() else None,
+                  err=lambda e: show_error(e) if current() else None)
 
     def _fill(self, page, res):
         items, total, pages = res
@@ -290,6 +305,15 @@ class ProductsPage(QWidget):
         sel = self._selected()
         if sel and BulkAIDialog(self.ctx, sel, self).exec():
             self.load()
+
+    def bulk_seo(self):
+        sel = self._selected()
+        if not sel:
+            return
+        if len(sel) > 20:
+            sel = sel[:20]
+            notify(t("Only the first 20 selected items are audited."), "warn")
+        SeoBulkDialog(self.ctx, sel, "product", self).exec()
 
     # ------------------------------------------------------------- csv ---
     def export_csv(self):

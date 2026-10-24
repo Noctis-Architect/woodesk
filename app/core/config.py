@@ -4,12 +4,14 @@ from __future__ import annotations
 import json
 import os
 import sys
+import threading
 import uuid
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
 # Set this to your own server before building releases (users can change it in Settings).
 DEFAULT_SERVER_URL = os.environ.get("WOODESK_SERVER_URL", "https://woodesk.wp-hub.org")
+_save_lock = threading.Lock()
 
 
 def data_dir() -> Path:
@@ -41,7 +43,8 @@ class Site:
 @dataclass
 class AISettings:
     mode: str = "server"  # "server" (free tier from the project server) | "custom" (own key)
-    api_format: str = "openai"  # "openai" | "anthropic"
+    provider_id: str = ""  # id from the dynamic AI catalog; empty = infer from api_format/base_url
+    api_format: str = "openai"  # legacy protocol hint, kept in sync from the provider profile
     base_url: str = "https://api.openai.com/v1"
     model: str = ""
     server_model: str = ""  # selected model when mode == "server"
@@ -49,6 +52,29 @@ class AISettings:
     output_language: str = "fa"
     gmail: str = ""  # required for server free AI tier
 
+
+
+@dataclass
+class NotificationSettings:
+    enabled: bool = True
+    out_of_stock: bool = True
+    new_orders: bool = False
+    interval_seconds: int = 60
+
+    @property
+    def active(self) -> bool:
+        return bool(self.enabled and (self.out_of_stock or self.new_orders))
+
+
+@dataclass
+class SeoSettings:
+    rendered: bool = True
+    check_links: bool = True
+    max_links: int = 8
+    max_pages: int = 20
+    delay_ms: int = 250
+    perf_device: str = "mobile"
+    perf_runs: int = 3
 
 
 @dataclass
@@ -61,6 +87,8 @@ class Config:
     sites: list = field(default_factory=list)
     active_site: str = ""
     ai: AISettings = field(default_factory=AISettings)
+    seo: SeoSettings = field(default_factory=SeoSettings)
+    notifications: NotificationSettings = field(default_factory=NotificationSettings)
     install_id: str = ""
     seen_announcements: list = field(default_factory=list)
     last_telemetry: float = 0.0
@@ -72,10 +100,11 @@ class Config:
         return data_dir() / "config.json"
 
     def save(self) -> None:
-        raw = asdict(self)
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(raw, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(self.path)
+        with _save_lock:
+            raw = asdict(self)
+            tmp = self.path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(raw, ensure_ascii=False, indent=2), encoding="utf-8")
+            tmp.replace(self.path)
 
     @classmethod
     def load(cls) -> "Config":
@@ -88,13 +117,23 @@ class Config:
                 return c
             known = {f.name for f in fields(cls)}
             for k, v in raw.items():
-                if k not in known or k in ("sites", "ai"):
+                if k not in known or k in ("sites", "ai", "seo", "notifications"):
                     continue
                 setattr(c, k, v)
             site_keys = {f.name for f in fields(Site)}
             c.sites = [Site(**{k: v for k, v in s.items() if k in site_keys}) for s in raw.get("sites", [])]
             ai_keys = {f.name for f in fields(AISettings)}
             c.ai = AISettings(**{k: v for k, v in raw.get("ai", {}).items() if k in ai_keys})
+            seo_keys = {f.name for f in fields(SeoSettings)}
+            c.seo = SeoSettings(**{k: v for k, v in raw.get("seo", {}).items() if k in seo_keys})
+            notify_keys = {f.name for f in fields(NotificationSettings)}
+            c.notifications = NotificationSettings(**{
+                k: v for k, v in raw.get("notifications", {}).items() if k in notify_keys
+            })
+            try:
+                c.notifications.interval_seconds = max(30, min(900, int(c.notifications.interval_seconds)))
+            except (TypeError, ValueError):
+                c.notifications.interval_seconds = 60
         return c
 
     # ---- helpers -----------------------------------------------------

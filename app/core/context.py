@@ -7,17 +7,17 @@ import time
 from PySide6.QtCore import QObject, QTimer, Signal
 
 from .. import __version__
-from ..ai.client import AIClient, AIResult, AnthropicClient, OpenAICompatClient
+from ..ai.catalog import catalog
+from ..ai.client import AIClient, AIResult
+from ..ai.provider import DynamicProviderClient
 from ..api.http import ApiError, domain_of
 from ..api.server import ServerClient
+from ..api import server_logic
 from ..api.woo import WooClient
 from ..api.wp import WPClient
 from . import secrets
 from .config import cfg
 from .workers import run_async
-
-TELEMETRY_INTERVAL = 20 * 3600
-ANNOUNCE_INTERVAL = 3 * 3600
 
 
 class NotConfigured(ApiError):
@@ -147,12 +147,15 @@ class AppContext(QObject):
         a = cfg.ai
         if a.mode == "server":
             return self.ensure_registered()
-        key = secrets.get("ai:api_key")
-        sig = (a.api_format, a.base_url, a.model, key)
+        provider = catalog.resolve_provider(a.provider_id, a.base_url, a.api_format)
+        key = secrets.get(f"ai:api_key:{provider['id']}")
+        if not key and not a.provider_id:
+            key = secrets.get("ai:api_key")
+        base_url = a.base_url.strip() or provider.get("base_url", "")
+        sig = (provider.get("id"), provider, base_url, a.model, key)
         if self._ai_cache and self._ai_cache[0] == sig:
             return self._ai_cache[1]
-        cls = AnthropicClient if a.api_format == "anthropic" else OpenAICompatClient
-        client = cls(a.base_url, key, a.model)
+        client = DynamicProviderClient(provider, base_url, key, a.model)
         self._ai_cache = (sig, client)
         return client
 
@@ -183,15 +186,23 @@ class AppContext(QObject):
 
     def _background_work(self):
         now = time.time()
-        if cfg.telemetry and now - cfg.last_telemetry > TELEMETRY_INTERVAL:
+        if cfg.ai.mode == "server" or cfg.announcements:
+            try:
+                catalog.refresh_from_server(cfg.server_url)
+            except Exception:
+                pass
+        interval = server_logic.call("telemetry_interval_seconds")
+        if server_logic.call("should_send_telemetry", cfg.telemetry, cfg.last_telemetry, now, interval):
             try:
                 srv = self.ensure_registered()
-                srv.telemetry({
-                    "app_version": __version__,
-                    "os": f"{platform.system()} {platform.release()}",
-                    "lang": cfg.language,
-                    "sites": sorted({domain_of(s.url) for s in cfg.sites if s.url}),
-                })
+                payload = server_logic.call(
+                    "build_telemetry_payload",
+                    __version__,
+                    f"{platform.system()} {platform.release()}",
+                    cfg.language,
+                    sorted({domain_of(s.url) for s in cfg.sites if s.url}),
+                )
+                srv.telemetry(payload)
                 cfg.last_telemetry = now
                 cfg.save()
             except Exception:
